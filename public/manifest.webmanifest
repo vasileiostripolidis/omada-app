@@ -1,0 +1,2 @@
+{ "name": "Ομάδα – Διαχείριση", "short_name": "Ομάδα", "start_url": "./", "display": "standalone", "background_color": "#0f7a3d", "theme_color": "#0f7a3d", "lang": "el",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }] }
