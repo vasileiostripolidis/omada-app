@@ -6,7 +6,8 @@ import { announce } from '../lib/billing'
 import { useApp, Modal, PageHead, Empty } from '../ui'
 
 export default function Teams() {
-  const { toast, teams, reloadTeams } = useApp()
+  const { toast, teams: allTeams, reloadTeams, isOffice, myTeams } = useApp()
+  const teams = isOffice ? allTeams : allTeams.filter((t) => myTeams.includes(t.id))
   const [players, setPlayers] = useState<Player[]>([])
   const [edit, setEdit] = useState<Partial<Team> | null>(null)
   const [mail, setMail] = useState<Team | null>(null)
@@ -18,7 +19,7 @@ export default function Teams() {
   return (
     <>
       <PageHead eyebrow="Ακαδημία" title="Ομάδες" sub="Οι ομάδες της ακαδημίας και τα ρόστερ τους.">
-        <button className="btn red" onClick={() => setEdit({ color: '#021534' })}><Plus size={18} />Νέα ομάδα</button>
+        {isOffice && <button className="btn red" onClick={() => setEdit({ color: '#021534' })}><Plus size={18} />Νέα ομάδα</button>}
       </PageHead>
       <div className="grid-2">
         {teams.map((t) => {
@@ -31,7 +32,7 @@ export default function Teams() {
                 {t.training_schedule && <div className="muted">Προπονήσεις: {t.training_schedule}</div>}
                 <div className="row" style={{ marginTop: 8 }}><span className="badge b-navy">{roster.length} αθλητές</span></div></div>
               <div className="row" style={{ flexDirection: 'column' }}>
-                <button className="iconbtn" title="Επεξεργασία" onClick={() => setEdit(t)}><Pencil size={15} /></button>
+                {isOffice && <button className="iconbtn" title="Επεξεργασία" onClick={() => setEdit(t)}><Pencil size={15} /></button>}
                 <button className="iconbtn" title="Email σε ενήλικες αθλητές" onClick={() => setMail(t)}><Mail size={15} /></button></div>
             </div>
             <div className="list" style={{ borderTop: '1px solid var(--line)', maxHeight: 340, overflow: 'auto' }}>{roster.map((p) => <Link to={`/players/${p.id}`} className="item" key={p.id}>
@@ -42,7 +43,7 @@ export default function Teams() {
         })}
       </div>
       {!teams.length && <div className="card"><Empty title="Καμία ομάδα" /></div>}
-      {unassigned.length > 0 && teams.length > 0 && <div className="card flush" style={{ marginTop: 16 }}><div className="card-head"><h2>Αθλητές χωρίς ομάδα ({unassigned.length})</h2></div>
+      {isOffice && unassigned.length > 0 && teams.length > 0 && <div className="card flush" style={{ marginTop: 16 }}><div className="card-head"><h2>Αθλητές χωρίς ομάδα ({unassigned.length})</h2></div>
         <div className="list">{unassigned.map((p) => <div className="item" key={p.id}><div className="grow t">{fullName(p)}</div>
           <select style={{ width: 'auto' }} value="" onChange={(e) => assign(p.id, e.target.value)}><option value="">Ανάθεση σε…</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>)}</div></div>}
       {edit && <TeamForm t={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reloadTeams() }} />}

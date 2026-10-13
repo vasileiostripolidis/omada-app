@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
 import { Upload } from 'lucide-react'
-import { sb, eur, uploadPublic, policyTotal, type Settings } from '../lib/supabase'
+import { sb, uploadPublic, ROLES, type Settings } from '../lib/supabase'
 import { useApp, PageHead } from '../ui'
 
 type Profile = { id: string; email: string; full_name: string; role: string }
 
 export default function SettingsPage() {
-  const { settings, reloadSettings, toast, role, email } = useApp()
+  const { settings, reloadSettings, toast, role, email, teams } = useApp()
   const [f, setF] = useState<Settings | null>(settings)
   const [users, setUsers] = useState<Profile[]>([])
+  const [ct, setCt] = useState<{ profile_id: string; team_id: string }[]>([])
   const [log, setLog] = useState<{ id: string; to_email: string; subject: string; kind: string; status: string; error: string | null; sent_at: string }[]>([])
   const admin = role === 'admin'
   useEffect(() => { setF(settings) }, [settings])
-  const loadUsers = () => sb.from('profiles').select('*').order('created_at').then(({ data }) => setUsers(data || []))
+  const loadUsers = () => { sb.from('profiles').select('*').order('created_at').then(({ data }) => setUsers(data || [])); sb.from('coach_teams').select('*').then(({ data }) => setCt(data || [])) }
   useEffect(() => { loadUsers(); sb.from('email_log').select('*').order('sent_at', { ascending: false }).limit(15).then(({ data }) => setLog(data || [])) }, [])
   if (!f) return null
 
@@ -30,25 +31,18 @@ export default function SettingsPage() {
     const file = e.target.files?.[0]; if (!file) return
     try { setF({ ...f!, logo_url: await uploadPublic(file, 'club') }) } catch (err) { toast((err as Error).message) }
   }
-  async function setRole(u: Profile, r: string) { await sb.from('profiles').update({ role: r }).eq('id', u.id); loadUsers() }
+  async function setRole(u: Profile, r: string) { const x = await sb.from('profiles').update({ role: r }).eq('id', u.id); if (x.error) toast(x.error.message); loadUsers() }
+  async function toggleTeam(u: Profile, tid: string) {
+    if (ct.some((x) => x.profile_id === u.id && x.team_id === tid)) await sb.from('coach_teams').delete().eq('profile_id', u.id).eq('team_id', tid)
+    else await sb.from('coach_teams').insert({ profile_id: u.id, team_id: tid })
+    loadUsers()
+  }
 
   return (
     <>
       <PageHead eyebrow="Διαχείριση" title="Ρυθμίσεις">{admin && <button className="btn red" onClick={save}>Αποθήκευση</button>}</PageHead>
       <fieldset disabled={!admin} style={{ border: 0, padding: 0, margin: 0 }} className="stack">
-        <div className="card">
-          <h2>Πολιτική πληρωμών</h2>
-          <p className="muted" style={{ marginTop: 0 }}>Μηνιαίο σύνολο ανά οικογένεια, ανάλογα με τον αριθμό των ενεργών παιδιών. Ισχύει για όλες τις οικογένειες εκτός αν τους ορίσεις ειδική τιμή.</p>
-          <div className="form">
-            {I('fee_1', '1 παιδί (€/μήνα)', 'number', { step: '0.01' })}{I('fee_2', '2 παιδιά – σύνολο (€/μήνα)', 'number', { step: '0.01' })}
-            {I('fee_3', '3 παιδιά – σύνολο (€/μήνα)', 'number', { step: '0.01' })}{I('fee_extra', 'Κάθε επιπλέον παιδί (+€)', 'number', { step: '0.01' })}
-          </div>
-          <div className="note" style={{ marginTop: 12 }}>
-            Ανά παιδί: 1 → <b>{eur(policyTotal(f, 1))}</b> · 2 → <b>{eur(policyTotal(f, 2) / 2)}</b> · 3 → <b>{eur(policyTotal(f, 3) / 3)}</b> · 4 → <b>{eur(policyTotal(f, 4) / 4)}</b> (σύνολο {eur(policyTotal(f, 4))}).
-            Για παιδί χωρισμένων γονιών με ποσοστό 50%-50%, κάθε λογαριασμός χρεώνεται το μισό.
-          </div>
-        </div>
-
+        <div className="note">Η πολιτική χρεώσεων (τιμές ανά παιδιά, ανά ομάδα, μήνες χωρίς χρέωση, πάγιες χρεώσεις) βρίσκεται στο <b>Ταμείο → Παραμετροποίηση χρεώσεων</b>.</div>
         <div className="card">
           <h2>Αυτοματισμοί</h2>
           <div className="form">
@@ -74,13 +68,15 @@ export default function SettingsPage() {
 
       <div className="card flush" style={{ marginTop: 14 }}>
         <div className="card-head"><h2>Χρήστες εφαρμογής</h2></div>
-        <div className="list">{users.map((u) => <div className="item" key={u.id}>
-          <div className="grow"><div className="t">{u.full_name}</div><div className="muted">{u.email}{u.email === email ? ' (εσύ)' : ''}</div></div>
+        <div className="list">{users.map((u) => <div className="item" key={u.id} style={{ flexWrap: 'wrap' }}>
+          <div className="grow"><div className="t">{u.full_name}</div><div className="muted">{u.email}{u.email === email ? ' (εσύ)' : ''}</div>
+            {u.role === 'coach' && <div className="chips" style={{ marginTop: 6 }}>{teams.map((t) => { const on = ct.some((x) => x.profile_id === u.id && x.team_id === t.id)
+              return <button key={t.id} className={'pill' + (on ? ' on' : '')} disabled={!admin} onClick={() => toggleTeam(u, t.id)}>{t.name}</button> })}</div>}</div>
           {admin && u.email !== email ? <select style={{ width: 'auto' }} value={u.role} onChange={(e) => setRole(u, e.target.value)}>
-            <option value="pending">Σε αναμονή</option><option value="coach">Προπονητής</option><option value="admin">Διαχειριστής</option></select>
-            : <span className="badge b-navy">{({ admin: 'Διαχειριστής', coach: 'Προπονητής', pending: 'Σε αναμονή' } as Record<string, string>)[u.role]}</span>}
+            {Object.entries(ROLES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+            : <span className="badge b-navy">{ROLES[u.role]}</span>}
         </div>)}</div>
-        <div className="item muted">Νέοι χρήστες (π.χ. προπονητές) κάνουν εγγραφή από τη σελίδα σύνδεσης και τους εγκρίνεις εδώ.</div>
+        <div className="item muted" style={{ display: 'block', lineHeight: 1.6 }}><b>Γραμματεία:</b> εγγραφές, οικογένειες, οφειλές, ενημερώσεις, πρόγραμμα. <b>Προπονητής:</b> μόνο οι ομάδες που του ανατίθενται (πάτα τις ομάδες κάτω από το όνομά του) — παρουσιολόγιο, ιατρικά, βιομετρικά, πρόγραμμα προπονήσεων. <b>Γονέας:</b> γίνεται αυτόματα όταν κάνει λογαριασμό με το email που είναι καταχωρημένο στην οικογένεια — βλέπει μόνο τα παιδιά του και τις οφειλές του.<br />Νέοι χρήστες κάνουν εγγραφή από τη σελίδα σύνδεσης και τους δίνεις ρόλο εδώ.</div>
       </div>
 
       <div className="card flush" style={{ marginTop: 14 }}>

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
-import { sb, fullName, EVTYPE, type EventRow, type Team, type Player, type Stat } from '../lib/supabase'
+import { Plus, CalendarPlus, Trash2, ShieldAlert } from 'lucide-react'
+import { sb, fullName, EVTYPE, WEEKDAYS, eligibility, ymd, type EventRow, type Team, type Player, type Stat, type Slot } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty, TeamChip } from '../ui'
 
 export default function Events() {
-  const { toast, teams } = useApp()
+  const { toast, teams: allTeams, myTeams, isCoach } = useApp()
+  const teams = isCoach ? allTeams.filter((t) => myTeams.includes(t.id)) : allTeams
   const [events, setEvents] = useState<EventRow[]>([])
-    const [team, setTeam] = useState('')
+  const [team, setTeam] = useState('')
+  const [view, setView] = useState<'list' | 'week'>('list')
   const [when, setWhen] = useState<'up' | 'past'>('up')
   const [edit, setEdit] = useState<Partial<EventRow> | null>(null)
   const [statsFor, setStatsFor] = useState<EventRow | null>(null)
@@ -34,9 +36,11 @@ export default function Events() {
 
   return (
     <>
-      <PageHead eyebrow="Αγωνιστικά" title="Αγώνες & Προπονήσεις">
+      <PageHead eyebrow="Αγωνιστικά" title="Πρόγραμμα & Παρουσίες" sub="Προπονήσεις, αγώνες και παρουσιολόγιο. Ο προπονητής καταγράφει παρουσίες με ένα πάτημα.">
         <button className="btn ghost" onClick={() => setBoard(true)}>Κορυφαίοι</button>
         <button className="btn red" onClick={() => setEdit({ type: 'match', home: true, team_id: team || teams[0]?.id })}><Plus size={18} />Νέο</button></PageHead>
+      <div className="tabs"><button className={'tab' + (view === 'list' ? ' on' : '')} onClick={() => setView('list')}>Πρόγραμμα</button><button className={'tab' + (view === 'week' ? ' on' : '')} onClick={() => setView('week')}>Εβδομαδιαίο πρόγραμμα προπονήσεων</button></div>
+      {view === 'week' ? <WeeklySchedule teams={teams} onGenerated={load} /> : <>
       <div className="row" style={{ marginBottom: 12 }}>
         <div className="pills"><button className={'pill' + (when === 'up' ? ' on' : '')} onClick={() => setWhen('up')}>Επόμενα</button><button className={'pill' + (when === 'past' ? ' on' : '')} onClick={() => setWhen('past')}>Προηγούμενα</button></div>
         <select value={team} onChange={(e) => setTeam(e.target.value)} style={{ width: 'auto' }}><option value="">Όλες οι ομάδες</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
@@ -48,9 +52,9 @@ export default function Events() {
             <div className="grow" style={{ cursor: 'pointer' }} onClick={() => setEdit({ ...e, starts_at: local(e.starts_at) })}>
               <b>{EVTYPE[e.type]}{e.opponent ? ` vs ${e.opponent}` : ''}</b> {e.score_for != null && <span className="badge">{e.score_for}-{e.score_against}</span>}
               <div className="muted"><TeamChip team={teams.find((t) => t.id === e.team_id)} /> · {new Date(e.starts_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })} · {e.location || ''} {e.type === 'match' ? (e.home ? '(εντός)' : '(εκτός)') : ''}</div></div>
-            <button className="btn ghost sm" onClick={() => setStatsFor(e)}>{e.type === 'match' ? 'Στατιστικά' : 'Παρουσίες'}</button>
-          </div>))}</div> : <Empty title="Τίποτα εδώ ακόμα" text="Πρόσθεσε αγώνα ή προπόνηση." />}
-      </div>
+            <button className={'btn sm ' + (e.type === 'match' ? 'ghost' : '')} onClick={() => setStatsFor(e)}>{e.type === 'match' ? 'Στατιστικά' : 'Παρουσιολόγιο'}</button>
+          </div>))}</div> : <Empty title="Τίποτα εδώ ακόμα" text="Πρόσθεσε αγώνα ή προπόνηση, ή δημιούργησε τις προπονήσεις του μήνα από το εβδομαδιαίο πρόγραμμα." />}
+      </div></>}
 
       {edit && <Modal title={edit.id ? 'Επεξεργασία' : 'Νέο γεγονός'} onClose={() => setEdit(null)}>
         <form onSubmit={save}><div className="form">
@@ -97,11 +101,13 @@ function StatsModal({ ev, onClose }: { ev: EventRow; onClose: () => void }) {
   const N = (pid: string, k: keyof Stat) => <td><input className="num" type="number" min={0} value={Number(rows[pid]?.[k] ?? 0)} onChange={(e) => upd(pid, k, +e.target.value)} /></td>
   return <Modal title={`${EVTYPE[ev.type]} ${ev.opponent ? 'vs ' + ev.opponent : ''} – ${new Date(ev.starts_at).toLocaleDateString('el-GR')}`} onClose={onClose}>
     <div className="scroll"><table><thead><tr><th>Παίκτης</th><th>Παρών</th>{match && <><th>Λεπτά</th><th>Γκολ</th><th>Ασίστ</th><th>🟨</th><th>🟥</th></>}</tr></thead><tbody>
-      {players.map((p) => <tr key={p.id}><td>{fullName(p)}</td><td><input type="checkbox" style={{ width: 22, height: 22 }} checked={!!rows[p.id]?.present} onChange={(e) => upd(p.id, 'present', e.target.checked)} /></td>
-        {match && <>{N(p.id, 'minutes')}{N(p.id, 'goals')}{N(p.id, 'assists')}{N(p.id, 'yellow')}{N(p.id, 'red')}</>}</tr>)}
+      {players.map((p) => { const el = eligibility(p); return <tr key={p.id}><td>{fullName(p)}{!el.ok && <div><span className="badge b-bad"><ShieldAlert size={11} />{el.issues[0]}</span></div>}</td><td><input type="checkbox" style={{ width: 22, height: 22 }} checked={!!rows[p.id]?.present} onChange={(e) => upd(p.id, 'present', e.target.checked)} /></td>
+        {match && <>{N(p.id, 'minutes')}{N(p.id, 'goals')}{N(p.id, 'assists')}{N(p.id, 'yellow')}{N(p.id, 'red')}</>}</tr> })}
     </tbody></table></div>
     {!players.length && <div className="empty">Η ομάδα δεν έχει παίκτες</div>}
-    <button className="btn" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }} onClick={save}>Αποθήκευση</button>
+    <div className="row" style={{ marginTop: 12 }}><span className="muted grow">Παρόντες: <b>{Object.values(rows).filter((r) => r.present).length}</b> / {players.length}</span>
+      <button className="btn ghost sm" onClick={() => setRows(Object.fromEntries(Object.entries(rows).map(([k, r]) => [k, { ...r, present: true }])))}>Όλοι παρόντες</button>
+      <button className="btn red" onClick={save}>Αποθήκευση</button></div>
   </Modal>
 }
 
@@ -130,3 +136,61 @@ function Leaders({ teams, onClose }: { teams: Team[]; onClose: () => void }) {
     {!rows.length && <div className="empty">Δεν υπάρχουν στατιστικά ακόμα</div>}
   </Modal>
 }
+
+function WeeklySchedule({ teams, onGenerated }: { teams: Team[]; onGenerated: () => void }) {
+  const { toast } = useApp()
+  const [slots, setSlots] = useState<Slot[]>([])
+  const [n, setN] = useState({ team_id: '', weekday: 2, start_time: '18:00', end_time: '19:30', location: '' })
+  const [month, setMonth] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() + (d.getDate() > 20 ? 1 : 0)); return d.toISOString().slice(0, 7) })
+  const [busy, setBusy] = useState(false)
+  const load = () => sb.from('training_slots').select('*').order('weekday').order('start_time').then(({ data }) => setSlots(data || []))
+  useEffect(() => { load() }, [])
+  useEffect(() => { if (!n.team_id && teams.length) setN((x) => ({ ...x, team_id: teams[0].id })) }, [teams.length])
+  async function add() {
+    if (!n.team_id) return
+    const r = await sb.from('training_slots').insert({ ...n, location: n.location || null }); if (r.error) return toast(r.error.message)
+    toast('Προστέθηκε ✓'); load()
+  }
+  async function del(s: Slot) { await sb.from('training_slots').delete().eq('id', s.id); load() }
+  async function generate() {
+    setBusy(true)
+    const [y, m] = month.split('-').map(Number)
+    const days = new Date(y, m, 0).getDate()
+    const from = new Date(y, m - 1, 1).toISOString(), to = new Date(y, m, 1).toISOString()
+    const { data: ex } = await sb.from('events').select('team_id, starts_at').gte('starts_at', from).lt('starts_at', to)
+    const have = new Set((ex || []).map((e) => e.team_id + '|' + new Date(e.starts_at).getTime()))
+    const rows: Partial<EventRow>[] = []
+    for (let d = 1; d <= days; d++) {
+      const date = new Date(y, m - 1, d); const wd = ((date.getDay() + 6) % 7) + 1
+      for (const s of slots.filter((x) => x.weekday === wd && teams.some((t) => t.id === x.team_id))) {
+        const [hh, mm] = s.start_time.split(':').map(Number)
+        const start = new Date(y, m - 1, d, hh, mm)
+        if (have.has(s.team_id + '|' + start.getTime())) continue
+        rows.push({ team_id: s.team_id, type: 'training', starts_at: start.toISOString(), location: s.location, home: true, notes: s.end_time ? `Έως ${s.end_time.slice(0, 5)}` : null })
+      }
+    }
+    if (rows.length) { const r = await sb.from('events').insert(rows); if (r.error) { setBusy(false); return toast(r.error.message) } }
+    setBusy(false); toast(rows.length ? `Δημιουργήθηκαν ${rows.length} προπονήσεις ✓` : 'Οι προπονήσεις του μήνα υπάρχουν ήδη'); onGenerated()
+  }
+  return <div className="stack">
+    <div className="grid-2">{teams.map((t) => <div className="card flush" key={t.id}>
+      <div className="card-head"><div className="row">{t.logo_url && <img src={t.logo_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain' }} />}<h2>{t.name}</h2></div></div>
+      <div className="list">{slots.filter((s) => s.team_id === t.id).map((s) => <div className="item" key={s.id}>
+        <b style={{ width: 96 }}>{WEEKDAYS[s.weekday]}</b><span className="num grow">{s.start_time.slice(0, 5)}{s.end_time ? `–${s.end_time.slice(0, 5)}` : ''} {s.location && <span className="muted">· {s.location}</span>}</span>
+        <button className="iconbtn" onClick={() => del(s)}><Trash2 size={14} /></button></div>)}
+        {!slots.some((s) => s.team_id === t.id) && <div className="empty" style={{ padding: 18 }}>Χωρίς σταθερές προπονήσεις</div>}</div>
+    </div>)}</div>
+    <div className="card"><h2>Νέα σταθερή προπόνηση</h2><div className="form">
+      <label className="f">Ομάδα<select value={n.team_id} onChange={(e) => setN({ ...n, team_id: e.target.value })}>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+      <label className="f">Ημέρα<select value={n.weekday} onChange={(e) => setN({ ...n, weekday: Number(e.target.value) })}>{WEEKDAYS.slice(1).map((w, i) => <option key={w} value={i + 1}>{w}</option>)}</select></label>
+      <label className="f">Έναρξη<input type="time" value={n.start_time} onChange={(e) => setN({ ...n, start_time: e.target.value })} /></label>
+      <label className="f">Λήξη<input type="time" value={n.end_time} onChange={(e) => setN({ ...n, end_time: e.target.value })} /></label>
+      <label className="f">Γήπεδο<input value={n.location} onChange={(e) => setN({ ...n, location: e.target.value })} /></label>
+    </div><button className="btn red" style={{ marginTop: 12 }} onClick={add}><Plus size={16} />Προσθήκη</button></div>
+    <div className="card row"><div className="grow"><h2 style={{ margin: 0 }}>Προπονήσεις μήνα</h2><div className="muted">Δημιουργεί όλες τις προπονήσεις του μήνα στο πρόγραμμα, βάσει του εβδομαδιαίου προγράμματος.</div></div>
+      <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: 170 }} />
+      <button className="btn" disabled={busy || !slots.length} onClick={generate}><CalendarPlus size={16} />{busy ? '…' : 'Δημιουργία'}</button></div>
+  </div>
+}
+// ymd διατηρείται για μελλοντική χρήση στο ημερολόγιο
+void ymd

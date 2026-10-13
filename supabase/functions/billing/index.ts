@@ -155,16 +155,28 @@ Deno.serve(async (req) => {
     const url = Deno.env.get('SUPABASE_URL')!
     const db = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const secret = req.headers.get('x-cron-secret')
-    let allowed = false
-    if (secret) allowed = !!(await db.rpc('check_cron_secret', { s: secret })).data
+    let role = '', uid = ''
+    if (secret) { if ((await db.rpc('check_cron_secret', { s: secret })).data) role = 'system' }
     else {
       const user = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } } })
-      allowed = !!(await user.rpc('is_staff')).data
+      const { data: u } = await user.auth.getUser()
+      if (u.user) { uid = u.user.id; const { data: pr } = await db.from('profiles').select('role').eq('id', uid).single(); role = pr?.role || '' }
     }
-    if (!allowed) return json({ error: 'Δεν επιτρέπεται' }, 403)
+    const office = ['system', 'admin', 'secretary'].includes(role)
+    if (!role || role === 'pending') return json({ error: 'Δεν επιτρέπεται' }, 403)
 
     const body = await req.json().catch(() => ({}))
     const { data: c } = await db.from('club_settings').select('*').eq('id', 1).single()
+    // γονέας: μόνο λήψη PDF για τη δική του οικογένεια
+    const parentOwns = async (hid: string) => role === 'parent' && !!(await db.from('guardians').select('id').eq('profile_id', uid).eq('household_id', hid).limit(1)).data?.length
+    if (!office) {
+      if (body.action === 'email' && role === 'coach') { /* ενημερώσεις ομάδας */ }
+      else if (body.action === 'statement' && !body.send && await parentOwns(body.household_id)) { /* ok */ }
+      else if (body.action === 'receipt' && body.send === false) {
+        const { data: pay } = await db.from('payments').select('household_id').eq('id', body.payment_id).single()
+        if (!pay || !(await parentOwns(pay.household_id))) return json({ error: 'Δεν επιτρέπεται' }, 403)
+      } else return json({ error: 'Δεν επιτρέπεται' }, 403)
+    }
 
     switch (body.action) {
       case 'statement': return json(await statement(db, c, body.household_id, !!body.send, !!body.reminder))

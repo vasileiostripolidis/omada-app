@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import type { Settings, Team } from './lib/supabase'
 import { STATUS } from './lib/supabase'
 
-export type Ctx = { settings: Settings | null; reloadSettings: () => void; toast: (m: string) => void; role: string; email: string; teams: Team[]; reloadTeams: () => void }
+export type Ctx = { settings: Settings | null; reloadSettings: () => void; toast: (m: string) => void; role: string; email: string; uid: string; teams: Team[]; reloadTeams: () => void; myTeams: string[]; isOffice: boolean; isCoach: boolean; isAdmin: boolean }
 export const AppCtx = createContext<Ctx>(null as unknown as Ctx)
 export const useApp = () => useContext(AppCtx)
 

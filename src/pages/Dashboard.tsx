@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, HeartHandshake, Wallet, TrendingUp, Stethoscope, CalendarDays } from 'lucide-react'
+import { Users, HeartHandshake, Wallet, TrendingUp, Stethoscope, CalendarDays, Activity } from 'lucide-react'
 import { sb, eur, dt, fullName, EVTYPE, BRAND, type Player, type EventRow, type Household, type Sponsor } from '../lib/supabase'
-import { useApp, TeamChip } from '../ui'
+import { useApp, TeamChip, Empty } from '../ui'
+import { eligibility } from '../lib/supabase'
 
 export default function Dashboard() {
+  const { isCoach } = useApp()
+  return isCoach ? <CoachDashboard /> : <OfficeDashboard />
+}
+
+function OfficeDashboard() {
   const { settings, teams } = useApp()
   const [k, setK] = useState({ players: 0, families: 0, owed: 0, monthPaid: 0, monthCharged: 0, overdue: 0 })
   const [debtors, setDebtors] = useState<(Household & { balance: number })[]>([])
@@ -98,4 +104,39 @@ export default function Dashboard() {
       </div>}
     </>
   )
+}
+
+function CoachDashboard() {
+  const { teams, myTeams, settings } = useApp()
+  const mine = teams.filter((t) => myTeams.includes(t.id))
+  const [players, setPlayers] = useState<Player[]>([])
+  const [next, setNext] = useState<EventRow[]>([])
+  useEffect(() => {
+    (async () => {
+      const [p, e] = await Promise.all([sb.from('players').select('*').eq('active', true).order('last_name'),
+        sb.from('events').select('*').gte('starts_at', new Date(Date.now() - 3 * 3600e3).toISOString()).order('starts_at').limit(8)])
+      setPlayers((p.data || []) as Player[]); setNext((e.data || []) as EventRow[])
+    })()
+  }, [])
+  const blocked = players.filter((p) => !eligibility(p).ok)
+  return <>
+    <div className="hero"><img src={settings?.logo_url || BRAND + 'pss-logo.png'} alt="" />
+      <div className="grow"><div className="eyebrow" style={{ color: '#ff6b80' }}>Προπονητής</div><h1>Οι ομάδες μου</h1>
+        <div className="sub">{new Date().toLocaleDateString('el-GR', { weekday: 'long', day: 'numeric', month: 'long' })}</div></div></div>
+    {!mine.length && <div className="card"><Empty title="Δεν σου έχουν ανατεθεί ομάδες" text="Η γραμματεία αναθέτει ομάδες από τις Ρυθμίσεις → Χρήστες." /></div>}
+    <div className="grid" style={{ marginBottom: 16 }}>{mine.map((t) => <Link key={t.id} to="/teams" className="card row">
+      {t.logo_url ? <img src={t.logo_url} alt="" style={{ width: 54, height: 54, objectFit: 'contain' }} /> : <div className="avatar">{t.name[0]}</div>}
+      <div><div className="head" style={{ fontSize: 19, fontWeight: 800 }}>{t.name}</div><div className="muted">{players.filter((p) => p.team_id === t.id).length} αθλητές</div></div></Link>)}</div>
+    <div className="grid-2">
+      <div className="card flush"><div className="card-head"><h2>Επόμενες προπονήσεις & αγώνες</h2><Link to="/events" className="btn ghost sm">Παρουσιολόγιο</Link></div>
+        {next.length ? <div className="list">{next.map((e) => <Link key={e.id} to="/events" className="item">
+          <div className="grow"><div className="t">{EVTYPE[e.type]}{e.opponent ? ` vs ${e.opponent}` : ''}</div><div className="muted"><TeamChip team={teams.find((t) => t.id === e.team_id)} /></div></div>
+          <span className="muted">{new Date(e.starts_at).toLocaleString('el-GR', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</span></Link>)}</div>
+          : <Empty title="Κενό πρόγραμμα" text="Δημιούργησε τις προπονήσεις του μήνα από το εβδομαδιαίο πρόγραμμα." />}</div>
+      <div className="card flush"><div className="card-head"><h2>Χωρίς δικαίωμα συμμετοχής</h2><Stethoscope size={18} color="var(--muted)" /></div>
+        {blocked.length ? <div className="list">{blocked.map((p) => <Link key={p.id} to={`/players/${p.id}`} className="item"><div className="grow t">{fullName(p)}</div><span className="badge b-bad">{eligibility(p).issues[0]}</span></Link>)}</div>
+          : <Empty title="Όλοι μπορούν να παίξουν" text="Ιατρικές βεβαιώσεις και δελτία σε ισχύ." />}</div>
+    </div>
+    <div className="card row" style={{ marginTop: 16 }}><Activity size={22} color="var(--red)" /><div className="grow"><b>Μηνιαίες μετρήσεις</b><div className="muted">Καταχώρισε βιομετρικά, τεστ και αξιολογήσεις για τον μήνα.</div></div><Link to="/performance" className="btn red">Επιδόσεις</Link></div>
+  </>
 }

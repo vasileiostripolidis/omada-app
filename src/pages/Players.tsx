@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, FileWarning } from 'lucide-react'
-import { sb, age, fullName, initials, isAdult, today, RELATIONS, type Player, type Household } from '../lib/supabase'
+import { sb, age, fullName, initials, isAdult, eligibility, RELATIONS, type Player, type Household } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty, TeamChip } from '../ui'
 
 export default function Players() {
-  const { teams } = useApp()
+  const { teams, isOffice } = useApp()
   const nav = useNavigate()
   const [players, setPlayers] = useState<Player[]>([])
   const [fam, setFam] = useState<Record<string, string[]>>({})
@@ -21,19 +21,18 @@ export default function Players() {
     ])
     setPlayers(p.data || [])
     const m: Record<string, string[]> = {}
-    for (const r of (l.data || []) as unknown as { player_id: string; households: { name: string } | null }[]) if (r.households) (m[r.player_id] ||= []).push(r.households.name)
+    for (const r of (l.data || []) as unknown as { player_id: string; households: { name: string } | null }[]) if (r.households?.name) (m[r.player_id] ||= []).push(r.households.name)
     setFam(m)
   }
   useEffect(() => { load() }, [])
 
-  const t = today()
   const list = players.filter((p) => (showInactive || p.active) && (!team || p.team_id === team)
     && (fullName(p) + ' ' + (fam[p.id] || []).join(' ')).toLowerCase().includes(q.toLowerCase()))
 
   return (
     <>
       <PageHead eyebrow="Ρόστερ" title="Αθλητές" sub={`${players.filter((p) => p.active).length} ενεργοί αθλητές`}>
-        <button className="btn red" onClick={() => setAdding(true)}><Plus size={18} />Νέος αθλητής</button>
+        {isOffice && <button className="btn red" onClick={() => setAdding(true)}><Plus size={18} />Νέος αθλητής</button>}
       </PageHead>
       <div className="row" style={{ marginBottom: 14 }}>
         <div className="search"><Search size={17} /><input placeholder="Αναζήτηση αθλητή ή οικογένειας…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
@@ -45,21 +44,20 @@ export default function Players() {
       </div>
       <div className="card flush">
         {list.length ? <div className="scroll"><table>
-          <thead><tr><th>Αθλητής</th><th>Ομάδα</th><th>Ηλικία</th><th>Οικογένεια</th><th>Έγγραφα</th></tr></thead>
+          <thead><tr><th>Αθλητής</th><th>Ομάδα</th><th>Ηλικία</th><th>Οικογένεια</th><th>Συμμετοχή</th></tr></thead>
           <tbody>{list.map((p) => {
-            const med = p.medical_expiry && p.medical_expiry >= t
             return <tr key={p.id} className="click" onClick={() => nav(`/players/${p.id}`)}>
               <td><div className="row" style={{ flexWrap: 'nowrap' }}><div className="avatar">{initials(p)}</div><div><b>{fullName(p)}</b>{p.jersey_number != null && <span className="muted"> #{p.jersey_number}</span>}
                 <div className="muted">{p.position || ''}{!p.active && ' · ανενεργός'}</div></div></div></td>
               <td><TeamChip team={teams.find((x) => x.id === p.team_id)} /></td>
               <td className="num">{age(p.birth_date) ?? '—'}{isAdult(p) && <span className="badge b-info" style={{ marginLeft: 6 }}>Ενήλικας</span>}</td>
               <td>{fam[p.id]?.length ? fam[p.id].join(', ') : <span className="badge b-warn">Χωρίς γονέα</span>}</td>
-              <td>{med ? <span className="badge b-ok">Ιατρική ✓</span> : <span className="badge b-bad"><FileWarning size={12} />Ιατρική</span>}</td>
+              <td>{(() => { const e = eligibility(p); return e.ok ? <span className="badge b-ok">Μπορεί να παίξει</span> : <span className="badge b-bad" title={e.issues.join(', ')}><FileWarning size={12} />{e.issues[0]}</span> })()}</td>
             </tr>
           })}</tbody></table></div>
           : <Empty title="Δεν βρέθηκαν αθλητές" text="Πρόσθεσε τον πρώτο αθλητή της ακαδημίας."><button className="btn red" onClick={() => setAdding(true)}><Plus size={18} />Νέος αθλητής</button></Empty>}
       </div>
-      <button className="btn red fab" onClick={() => setAdding(true)} aria-label="Νέος αθλητής"><Plus size={26} /></button>
+      {isOffice && <button className="btn red fab" onClick={() => setAdding(true)} aria-label="Νέος αθλητής"><Plus size={26} /></button>}
       {adding && <PlayerForm player={{ active: true }} onClose={() => setAdding(false)} onSaved={(id) => { setAdding(false); nav(`/players/${id}`) }} />}
     </>
   )

@@ -4,10 +4,11 @@ import { Plus, Search } from 'lucide-react'
 import { sb, eur, fullName, monthlyAmount, RELATIONS, type Household, type Guardian } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty } from '../ui'
 
-type Row = Household & { guardians: Guardian[]; kids: { name: string; share: number; active: boolean }[]; balance: number; overdue: number }
+type Kid = { name: string; share: number; active: boolean; team_id: string | null; birth_date: string | null }
+type Row = Household & { guardians: Guardian[]; kids: Kid[]; balance: number; overdue: number }
 
 export default function Families() {
-  const { settings } = useApp()
+  const { settings, teams } = useApp()
   const nav = useNavigate()
   const [rows, setRows] = useState<Row[]>([])
   const [q, setQ] = useState('')
@@ -18,14 +19,14 @@ export default function Families() {
     const [h, g, l, b] = await Promise.all([
       sb.from('households').select('*').order('name'),
       sb.from('guardians').select('*').order('created_at'),
-      sb.from('player_households').select('household_id, share_pct, players(first_name,last_name,active)'),
+      sb.from('player_households').select('household_id, share_pct, players(first_name,last_name,active,team_id,birth_date)'),
       sb.from('household_balances').select('*'),
     ])
     const bal = new Map((b.data || []).map((x) => [x.household_id, x]))
-    const links = (l.data || []) as unknown as { household_id: string; share_pct: number; players: { first_name: string; last_name: string; active: boolean } }[]
+    const links = (l.data || []) as unknown as { household_id: string; share_pct: number; players: { first_name: string; last_name: string; active: boolean; team_id: string | null; birth_date: string | null } }[]
     setRows(((h.data || []) as Household[]).map((x) => ({
       ...x, guardians: (g.data || []).filter((y) => y.household_id === x.id),
-      kids: links.filter((y) => y.household_id === x.id && y.players).map((y) => ({ name: fullName(y.players), share: Number(y.share_pct), active: y.players.active })),
+      kids: links.filter((y) => y.household_id === x.id && y.players).map((y) => ({ name: fullName(y.players), share: Number(y.share_pct), active: y.players.active, team_id: y.players.team_id, birth_date: y.players.birth_date })),
       balance: Number(bal.get(x.id)?.balance || 0), overdue: Number(bal.get(x.id)?.overdue_count || 0),
     })))
   }
@@ -51,7 +52,7 @@ export default function Families() {
             <td><b>{r.name}</b>{r.monthly_override != null && <div className="muted">ειδική τιμή</div>}</td>
             <td>{r.guardians.map((g) => <div key={g.id}>{g.first_name} {g.last_name} <span className="muted">· {g.relation}</span></div>)}{!r.guardians.length && <span className="badge b-warn">Χωρίς γονέα</span>}</td>
             <td>{r.kids.map((k) => <div key={k.name}>{k.name}{k.share < 100 && <span className="muted"> ({k.share}%)</span>}</div>)}{!r.kids.length && <span className="muted">—</span>}</td>
-            <td className="r num">{eur(monthlyAmount(settings, r, r.kids.map((k) => ({ share_pct: k.share, active: k.active }))))}</td>
+            <td className="r num">{eur(monthlyAmount(settings, r, r.kids.map((k) => ({ share_pct: k.share, active: k.active, team_id: k.team_id, birth_date: k.birth_date })), teams))}</td>
             <td className="r num">{r.balance > 0.004 ? <span className={'badge ' + (r.overdue ? 'b-bad' : 'b-warn')}>{eur(r.balance)}</span> : <span className="badge b-ok">{r.balance < -0.004 ? `Πίστωση ${eur(-r.balance)}` : 'Εξοφλημένη'}</span>}</td>
           </tr>)}</tbody></table></div>
           : <Empty title="Δεν βρέθηκαν οικογένειες" text="Οι οικογένειες δημιουργούνται και αυτόματα όταν προσθέτεις αθλητή με τους γονείς του." />}

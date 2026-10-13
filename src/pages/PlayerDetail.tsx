@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Pencil, Upload, FileText, Trash2, Phone, Mail, Link2, Unlink, Camera, HeartHandshake } from 'lucide-react'
-import { sb, eur, dt, age, fullName, initials, isAdult, signedUrl, today, DOC_TYPES, type Player, type Household, type Guardian } from '../lib/supabase'
+import { ArrowLeft, Pencil, Upload, FileText, Trash2, Phone, Mail, Link2, Unlink, Camera, HeartHandshake, FileDown, ShieldCheck, ShieldAlert } from 'lucide-react'
+import { sb, eur, dt, age, fullName, initials, isAdult, signedUrl, today, eligibility, CATEGORIES, CONSENTS, MONTHS, DOC_TYPES, type Player, type Household, type Guardian, type MetricDef } from '../lib/supabase'
+import LineChart from '../components/LineChart'
 import { useApp, Modal, TeamChip, Empty } from '../ui'
 import { PlayerForm } from './Players'
 
@@ -11,7 +12,7 @@ type LinkRow = { household_id: string; share_pct: number; households: Household 
 export default function PlayerDetail() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { toast, teams } = useApp()
+  const { toast, teams, isOffice, settings } = useApp()
   const [p, setP] = useState<Player | null>(null)
   const [files, setFiles] = useState<FileRow[]>([])
   const [links, setLinks] = useState<LinkRow[]>([])
@@ -24,6 +25,13 @@ export default function PlayerDetail() {
   const [docType, setDocType] = useState('medical')
   const [busy, setBusy] = useState(false)
   const [linking, setLinking] = useState(false)
+  const [defs, setDefs] = useState<MetricDef[]>([])
+  const [periods, setPeriods] = useState<string[]>([])
+  const [mv, setMv] = useState<Record<string, Record<number, number>>>({})
+  const [tavg, setTavg] = useState<Record<string, Record<number, number>>>({})
+  const [evals, setEvals] = useState<{ period: string; comment: string }[]>([])
+  const [consents, setConsents] = useState<{ kind: string; granted: boolean; signed_by: string | null; signed_at: string }[]>([])
+  const [pcat, setPcat] = useState('body')
 
   const load = async () => {
     const [a, f, l, s] = await Promise.all([
@@ -44,6 +52,35 @@ export default function PlayerDetail() {
     const sum = (k: 'goals' | 'assists' | 'minutes' | 'yellow' | 'red') => m.reduce((x, r) => x + (Number(r[k]) || 0), 0)
     setStats({ apps: m.length, goals: sum('goals'), assists: sum('assists'), minutes: sum('minutes'), yellow: sum('yellow'), red: sum('red'), att: rows.filter((r) => r.present).length, total: rows.length })
     setPhoto(a.data?.photo_path ? await signedUrl(a.data.photo_path) : undefined)
+    // επιδόσεις τελευταίων 12 μηνών + μέσος όρος ομάδας
+    const from = new Date(); from.setMonth(from.getMonth() - 11); const fromP = new Date(from.getFullYear(), from.getMonth(), 1)
+    const ps: string[] = []; for (let i = 0; i < 12; i++) { const x = new Date(fromP.getFullYear(), fromP.getMonth() + i, 1); ps.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-01`) }
+    const [md, pm, ev, cs] = await Promise.all([
+      sb.from('metric_defs').select('*').eq('active', true).order('sort'),
+      sb.from('player_metrics').select('*').eq('player_id', id).gte('period', ps[0]),
+      sb.from('player_evaluations').select('*').eq('player_id', id).order('period'),
+      sb.from('consents').select('*').eq('player_id', id).order('signed_at', { ascending: false }),
+    ])
+    setDefs(md.data || []); setEvals((ev.data || []) as { period: string; comment: string }[]); setConsents(cs.data || [])
+    const v: Record<string, Record<number, number>> = {}
+    for (const r of pm.data || []) (v[r.period] ||= {})[r.metric_id] = Number(r.value)
+    const used = ps.filter((x) => v[x]); const firstIdx = used.length ? ps.indexOf(used[0]) : ps.length - 1
+    setPeriods(ps.slice(Math.min(firstIdx, ps.length - 3))); setMv(v)
+    if (a.data?.team_id) {
+      const { data: mates } = await sb.from('players').select('id').eq('team_id', a.data.team_id)
+      const { data: tm } = await sb.from('player_metrics').select('period, metric_id, value').in('player_id', (mates || []).map((x) => x.id)).gte('period', ps[0])
+      const acc: Record<string, Record<number, number[]>> = {}
+      for (const r of tm || []) ((acc[r.period] ||= {})[r.metric_id] ||= []).push(Number(r.value))
+      setTavg(Object.fromEntries(Object.entries(acc).map(([k, o]) => [k, Object.fromEntries(Object.entries(o).map(([m, xs]) => [m, xs.reduce((a2, b2) => a2 + b2, 0) / xs.length]))])))
+    }
+  }
+  async function report() {
+    const { evaluationPdf } = await import('../lib/reportPdf')
+    const { data: st } = await sb.from('player_stats').select('*, events(type)').eq('player_id', id)
+    const rows = (st || []) as { present: boolean; goals: number; assists: number; events: { type: string } }[]
+    const m = rows.filter((r) => r.events?.type === 'match' && r.present)
+    await evaluationPdf({ player: p!, teamName: teams.find((x) => x.id === p!.team_id)?.name || '', age: age(p!.birth_date), settings, defs, periods: periods.filter((x) => mv[x]), values: mv, teamAvg: tavg,
+      attendance: { present: rows.filter((r) => r.present).length, total: rows.length }, matches: { apps: m.length, goals: m.reduce((a2, r) => a2 + (r.goals || 0), 0), assists: m.reduce((a2, r) => a2 + (r.assists || 0), 0) }, comments: evals })
   }
   useEffect(() => { load() }, [id])
   if (!p) return null
@@ -99,12 +136,14 @@ export default function PlayerDetail() {
           <div className="row" style={{ marginTop: 8 }}><TeamChip team={teams.find((x) => x.id === p.team_id)} />
             {age(p.birth_date) != null && <span className="badge">{age(p.birth_date)} ετών</span>}
             {isAdult(p) && <span className="badge b-info">Ενήλικας</span>}
-            {!p.active && <span className="badge">Ανενεργός</span>}</div>
+            {!p.active && <span className="badge">Ανενεργός</span>}
+            {(() => { const e = eligibility(p); return e.ok ? <span className="badge b-ok"><ShieldCheck size={12} />Δικαίωμα συμμετοχής</span> : <span className="badge b-bad" title={e.issues.join(', ')}><ShieldAlert size={12} />{e.issues[0]}</span> })()}</div>
         </div>
-        <button className="btn" onClick={() => setEditing(true)}><Pencil size={16} />Επεξεργασία</button>
+        <div className="row"><button className="btn ghost" onClick={report}><FileDown size={16} />PDF αξιολόγησης</button>
+        <button className="btn" onClick={() => setEditing(true)}><Pencil size={16} />Επεξεργασία</button></div>
       </div>
 
-      <div className="tabs">{[['info', 'Στοιχεία'], ['family', `Γονείς & Πληρωμές (${links.length})`], ['docs', `Έγγραφα (${files.length})`], ['stats', 'Στατιστικά']].map(([k, l]) =>
+      <div className="tabs">{[['info', 'Στοιχεία'], ['perf', 'Επιδόσεις'], ['family', isOffice ? `Γονείς & Πληρωμές (${links.length})` : 'Επαφές γονέων'], ['docs', `Έγγραφα (${files.length})`], ['stats', 'Αγωνιστικά']].map(([k, l]) =>
         <button key={k} className={'tab' + (tab === k ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>)}</div>
 
       {tab === 'info' && <div className="stack">
@@ -114,28 +153,47 @@ export default function PlayerDetail() {
             ['Εγγραφή', dt(p.joined_at)], ['Ιατρικές σημειώσεις', p.medical_notes], ['Σημειώσεις', p.notes]]
             .map(([l, v]) => <div key={l}><div className="muted" style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, letterSpacing: .6 }}>{l}</div><div style={{ marginTop: 3 }}>{v || '—'}</div></div>)}
         </div></div>
-        <div className="row"><button className="btn ghost sm" onClick={async () => { await sb.from('players').update({ active: !p.active }).eq('id', id); load() }}>{p.active ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}</button>
-          <button className="btn danger sm" onClick={remove}><Trash2 size={15} />Διαγραφή αθλητή</button></div>
+        <div className="card"><h2>Συγκαταθέσεις GDPR</h2>
+          {consents.length ? <div className="list">{CONSENTS.map((c) => { const x = consents.find((y) => y.kind === c.key)
+            return <div className="item" key={c.key} style={{ padding: '10px 0' }}><span className={'badge ' + (x?.granted ? 'b-ok' : x ? 'b-bad' : 'b-warn')}>{x?.granted ? 'Ναι' : x ? 'Όχι' : 'Εκκρεμεί'}</span><div className="grow" style={{ fontSize: 13.5 }}>{c.label}</div>{x && <span className="muted">{x.signed_by} · {dt(x.signed_at)}</span>}</div> })}</div>
+            : <div className="note warn">Δεν έχουν καταγραφεί συγκαταθέσεις. Στείλε στον γονέα τη φόρμα ηλεκτρονικής εγγραφής ή κατέγραψέ τες από την ενότητα «Εγγραφές».</div>}
+        </div>
+        {isOffice && <div className="row"><button className="btn ghost sm" onClick={async () => { await sb.from('players').update({ active: !p.active }).eq('id', id); load() }}>{p.active ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}</button>
+          <button className="btn danger sm" onClick={remove}><Trash2 size={15} />Διαγραφή αθλητή</button></div>}
+      </div>}
+
+      {tab === 'perf' && <div className="stack">
+        {!consents.find((c) => c.kind === 'biometrics' && c.granted) && <div className="note warn">Δεν υπάρχει καταγεγραμμένη συγκατάθεση γονέα για βιομετρικά/επιδόσεις.</div>}
+        <div className="pills">{Object.entries(CATEGORIES).map(([k, l]) => <button key={k} className={'pill' + (pcat === k ? ' on' : '')} onClick={() => setPcat(k)}>{l}</button>)}</div>
+        <div className="grid-charts">{defs.filter((d) => d.category === pcat).map((d) => {
+          const pts = periods.map((x) => ({ x: new Date(x).toLocaleDateString('el-GR', { month: 'long', year: 'numeric' }), label: MONTHS[new Date(x).getMonth()], v: mv[x]?.[d.id] ?? null }))
+          return <LineChart key={d.id} title={d.name} unit={d.unit} decimals={d.decimals} higherBetter={d.higher_better} points={pts} avg={periods.map((x) => tavg[x]?.[d.id] ?? null)} />
+        })}</div>
+        {pcat === 'body' && (() => { const hId = defs.find((d) => d.name === 'Ύψος')?.id, wId = defs.find((d) => d.name === 'Βάρος')?.id
+          const pts = periods.map((x) => { const h = hId ? mv[x]?.[hId] : undefined, w = wId ? mv[x]?.[wId] : undefined; return { x: new Date(x).toLocaleDateString('el-GR', { month: 'long', year: 'numeric' }), label: MONTHS[new Date(x).getMonth()], v: h && w ? Math.round((w / ((h / 100) ** 2)) * 10) / 10 : null } })
+          return <div className="grid-charts"><LineChart title="BMI" unit="kg/m²" points={pts} /></div> })()}
+        {evals.some((e) => e.comment) && <div className="card"><h2>Σχόλια προπονητή</h2><div className="list">{[...evals].reverse().filter((e) => e.comment).map((e) =>
+          <div className="item" key={e.period} style={{ padding: '10px 0' }}><span className="badge b-navy">{MONTHS[new Date(e.period).getMonth()]} {new Date(e.period).getFullYear()}</span><div className="grow">{e.comment}</div></div>)}</div></div>}
       </div>}
 
       {tab === 'family' && <div className="stack">
-        {links.length === 0 && <div className="card"><Empty title="Χωρίς γονείς" text="Σύνδεσε τον αθλητή με την οικογένειά του για να χρεώνεται αυτόματα.">
+        {links.length === 0 && isOffice && <div className="card"><Empty title="Χωρίς γονείς" text="Σύνδεσε τον αθλητή με την οικογένειά του για να χρεώνεται αυτόματα.">
           <div className="row" style={{ justifyContent: 'center' }}><button className="btn red" onClick={() => setLinking(true)}><Link2 size={16} />Σύνδεση με οικογένεια</button>
             {isAdult(p) && <button className="btn ghost" onClick={selfPay}>Πληρώνει ο ίδιος</button>}</div></Empty></div>}
         {links.map((l) => <div className="card flush" key={l.household_id}>
-          <div className="card-head"><Link to={`/families/${l.household_id}`} className="row"><HeartHandshake size={18} color="var(--red)" /><h2>{l.households.name}</h2></Link>
-            <div className="row"><span className={'badge ' + ((bal[l.household_id] || 0) > 0.004 ? 'b-bad' : 'b-ok')}>{(bal[l.household_id] || 0) > 0.004 ? `Οφειλή ${eur(bal[l.household_id])}` : 'Εξοφλημένοι'}</span>
-              <button className="iconbtn" title="Αποσύνδεση" onClick={() => unlink(l.household_id)}><Unlink size={15} /></button></div></div>
+          <div className="card-head"><Link to={`/families/${l.household_id}`} className="row"><HeartHandshake size={18} color="var(--red)" /><h2>{l.households?.name || 'Οικογένεια'}</h2></Link>
+            {isOffice && <div className="row"><span className={'badge ' + ((bal[l.household_id] || 0) > 0.004 ? 'b-bad' : 'b-ok')}>{(bal[l.household_id] || 0) > 0.004 ? `Οφειλή ${eur(bal[l.household_id])}` : 'Εξοφλημένοι'}</span>
+              <button className="iconbtn" title="Αποσύνδεση" onClick={() => unlink(l.household_id)}><Unlink size={15} /></button></div>}</div>
           <div className="list">{guards.filter((g) => g.household_id === l.household_id).map((g) => <div className="item" key={g.id}>
             <div className="avatar" style={{ background: 'var(--navy-3)' }}>{initials(g)}</div>
             <div className="grow"><div className="t">{g.first_name} {g.last_name}</div><div className="muted">{g.relation}{g.receives_emails ? '' : ' · χωρίς ειδοποιήσεις'}</div></div>
             {g.phone && <a className="iconbtn" href={`tel:${g.phone}`} title={g.phone}><Phone size={15} /></a>}
             {g.email && <a className="iconbtn" href={`mailto:${g.email}`} title={g.email}><Mail size={15} /></a>}
           </div>)}</div>
-          <div className="item" style={{ background: 'var(--soft)' }}><div className="grow muted">Ποσοστό χρέωσης του αθλητή σε αυτή την οικογένεια (π.χ. 50% αν πληρώνουν χωριστά οι γονείς)</div>
-            <select style={{ width: 110 }} value={Number(l.share_pct)} onChange={(e) => setShare(l.household_id, Number(e.target.value))}>{[100, 75, 50, 25, 0].map((v) => <option key={v} value={v}>{v}%</option>)}</select></div>
+          {isOffice && <div className="item" style={{ background: 'var(--soft)' }}><div className="grow muted">Ποσοστό χρέωσης του αθλητή σε αυτή την οικογένεια (π.χ. 50% αν πληρώνουν χωριστά οι γονείς)</div>
+            <select style={{ width: 110 }} value={Number(l.share_pct)} onChange={(e) => setShare(l.household_id, Number(e.target.value))}>{[100, 75, 50, 25, 0].map((v) => <option key={v} value={v}>{v}%</option>)}</select></div>}
         </div>)}
-        {links.length > 0 && <div className="row"><button className="btn ghost" onClick={() => setLinking(true)}><Link2 size={16} />Σύνδεση και με άλλη οικογένεια (χωριστοί γονείς)</button></div>}
+        {links.length > 0 && isOffice && <div className="row"><button className="btn ghost" onClick={() => setLinking(true)}><Link2 size={16} />Σύνδεση και με άλλη οικογένεια (χωριστοί γονείς)</button></div>}
       </div>}
 
       {tab === 'docs' && <div className="card flush">

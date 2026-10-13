@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Pencil, Trash2, Phone, Mail, Download, Send, CheckCircle2, Merge, UserPlus, Receipt, ArrowRightLeft, BellOff } from 'lucide-react'
-import { sb, eur, dt, fullName, initials, monthlyAmount, policyTotal, today, METHOD, RELATIONS, type Household, type Guardian, type Charge, type Payment, type Player } from '../lib/supabase'
+import { sb, eur, dt, fullName, initials, monthlyAmount, today, METHOD, RELATIONS, type Household, type Guardian, type Charge, type Payment, type Player } from '../lib/supabase'
 import { statement, receipt, downloadPdf } from '../lib/billing'
 import { useApp, Modal, Empty, StatusBadge } from '../ui'
 
@@ -10,7 +10,7 @@ type Kid = { player_id: string; share_pct: number; players: Player }
 export default function FamilyDetail() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { toast, settings } = useApp()
+  const { toast, settings, teams } = useApp()
   const [h, setH] = useState<Household | null>(null)
   const [guards, setGuards] = useState<Guardian[]>([])
   const [kids, setKids] = useState<Kid[]>([])
@@ -41,9 +41,10 @@ export default function FamilyDetail() {
   useEffect(() => { load() }, [id])
   if (!h) return null
 
-  const monthly = monthlyAmount(settings, h, kids.map((k) => ({ share_pct: Number(k.share_pct), active: k.players.active })))
+  const kl = kids.map((k) => ({ share_pct: Number(k.share_pct), active: k.players.active, team_id: k.players.team_id, birth_date: k.players.birth_date, created_at: k.players.created_at }))
+  const monthly = monthlyAmount(settings, h, kl, teams)
   const activeKids = kids.filter((k) => k.players.active && Number(k.share_pct) > 0).length
-  const policy = settings ? policyTotal(settings, activeKids) : 0
+  const policy = monthlyAmount(settings, { ...h, monthly_override: null, discount_pct: 0 }, kl, teams)
   const recipients = guards.filter((g) => g.receives_emails && g.email)
 
   async function updateH(patch: Partial<Household>) { const r = await sb.from('households').update(patch).eq('id', id); if (r.error) toast(r.error.message); else { toast('Αποθηκεύτηκε ✓'); load() } }
