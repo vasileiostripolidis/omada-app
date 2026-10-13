@@ -1,29 +1,27 @@
 import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { sb, fullName, EVTYPE, type EventRow, type Team, type Player, type Stat } from '../lib/supabase'
-import { useApp, Modal } from '../App'
+import { useApp, Modal, PageHead, Empty, TeamChip } from '../ui'
 
 export default function Events() {
-  const { toast } = useApp()
+  const { toast, teams } = useApp()
   const [events, setEvents] = useState<EventRow[]>([])
-  const [teams, setTeams] = useState<Team[]>([])
-  const [team, setTeam] = useState('')
+    const [team, setTeam] = useState('')
   const [when, setWhen] = useState<'up' | 'past'>('up')
   const [edit, setEdit] = useState<Partial<EventRow> | null>(null)
   const [statsFor, setStatsFor] = useState<EventRow | null>(null)
   const [board, setBoard] = useState(false)
 
   const load = async () => {
-    const [e, t] = await Promise.all([sb.from('events').select('*').order('starts_at'), sb.from('teams').select('*').order('name')])
-    setEvents(e.data || []); setTeams(t.data || [])
+    const { data } = await sb.from('events').select('*').order('starts_at')
+    setEvents(data || [])
   }
   useEffect(() => { load() }, [])
 
   const now = new Date().toISOString()
   let list = events.filter((e) => (!team || e.team_id === team) && (when === 'up' ? e.starts_at >= now : e.starts_at < now))
   if (when === 'past') list = [...list].reverse()
-  const tName = (id: string | null) => teams.find((t) => t.id === id)?.name || ''
-
+  
   async function save(ev: React.FormEvent) {
     ev.preventDefault()
     const { id, ...rest } = edit!
@@ -36,35 +34,35 @@ export default function Events() {
 
   return (
     <>
-      <div className="row between"><h1>Αγώνες & Προπονήσεις</h1>
-        <div className="row"><button className="btn ghost" onClick={() => setBoard(true)}>🏆 Κορυφαίοι</button>
-          <button className="btn" onClick={() => setEdit({ type: 'match', home: true, team_id: team || teams[0]?.id })}><Plus size={18} />Νέο</button></div></div>
+      <PageHead eyebrow="Αγωνιστικά" title="Αγώνες & Προπονήσεις">
+        <button className="btn ghost" onClick={() => setBoard(true)}>Κορυφαίοι</button>
+        <button className="btn red" onClick={() => setEdit({ type: 'match', home: true, team_id: team || teams[0]?.id })}><Plus size={18} />Νέο</button></PageHead>
       <div className="row" style={{ marginBottom: 12 }}>
-        <div className="tabs" style={{ margin: 0 }}><button className={'tab' + (when === 'up' ? ' on' : '')} onClick={() => setWhen('up')}>Επόμενα</button><button className={'tab' + (when === 'past' ? ' on' : '')} onClick={() => setWhen('past')}>Προηγούμενα</button></div>
+        <div className="pills"><button className={'pill' + (when === 'up' ? ' on' : '')} onClick={() => setWhen('up')}>Επόμενα</button><button className={'pill' + (when === 'past' ? ' on' : '')} onClick={() => setWhen('past')}>Προηγούμενα</button></div>
         <select value={team} onChange={(e) => setTeam(e.target.value)} style={{ width: 'auto' }}><option value="">Όλες οι ομάδες</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
       </div>
-      <div className="card">
+      <div className="card flush">
         {list.length ? <div className="list">{list.map((e) => (
           <div className="item" key={e.id}>
-            <div style={{ textAlign: 'center', width: 52 }}><b style={{ fontSize: 20 }}>{new Date(e.starts_at).getDate()}</b><div className="muted">{new Date(e.starts_at).toLocaleDateString('el-GR', { month: 'short' })}</div></div>
+            <div style={{ textAlign: 'center', width: 52 }}><b className="head" style={{ fontSize: 24 }}>{new Date(e.starts_at).getDate()}</b><div className="muted">{new Date(e.starts_at).toLocaleDateString('el-GR', { month: 'short' })}</div></div>
             <div className="grow" style={{ cursor: 'pointer' }} onClick={() => setEdit({ ...e, starts_at: local(e.starts_at) })}>
               <b>{EVTYPE[e.type]}{e.opponent ? ` vs ${e.opponent}` : ''}</b> {e.score_for != null && <span className="badge">{e.score_for}-{e.score_against}</span>}
-              <div className="muted">{tName(e.team_id)} · {new Date(e.starts_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })} · {e.location || ''} {e.type === 'match' ? (e.home ? '(εντός)' : '(εκτός)') : ''}</div></div>
+              <div className="muted"><TeamChip team={teams.find((t) => t.id === e.team_id)} /> · {new Date(e.starts_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })} · {e.location || ''} {e.type === 'match' ? (e.home ? '(εντός)' : '(εκτός)') : ''}</div></div>
             <button className="btn ghost sm" onClick={() => setStatsFor(e)}>{e.type === 'match' ? 'Στατιστικά' : 'Παρουσίες'}</button>
-          </div>))}</div> : <div className="empty">Τίποτα εδώ ακόμα</div>}
+          </div>))}</div> : <Empty title="Τίποτα εδώ ακόμα" text="Πρόσθεσε αγώνα ή προπόνηση." />}
       </div>
 
       {edit && <Modal title={edit.id ? 'Επεξεργασία' : 'Νέο γεγονός'} onClose={() => setEdit(null)}>
         <form onSubmit={save}><div className="form">
-          <label>Τύπος<select value={edit.type} onChange={(e) => setEdit({ ...edit, type: e.target.value })}>{Object.entries(EVTYPE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-          <label>Ομάδα<select required value={edit.team_id || ''} onChange={(e) => setEdit({ ...edit, team_id: e.target.value })}><option value="">—</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-          <label>Ημ/νία & ώρα<input type="datetime-local" required value={edit.starts_at || ''} onChange={(e) => setEdit({ ...edit, starts_at: e.target.value })} /></label>
-          <label>Γήπεδο<input value={edit.location || ''} onChange={(e) => setEdit({ ...edit, location: e.target.value })} /></label>
+          <label className="f">Τύπος<select value={edit.type} onChange={(e) => setEdit({ ...edit, type: e.target.value })}>{Object.entries(EVTYPE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label className="f">Ομάδα<select required value={edit.team_id || ''} onChange={(e) => setEdit({ ...edit, team_id: e.target.value })}><option value="">—</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+          <label className="f">Ημ/νία & ώρα<input type="datetime-local" required value={edit.starts_at || ''} onChange={(e) => setEdit({ ...edit, starts_at: e.target.value })} /></label>
+          <label className="f">Γήπεδο<input value={edit.location || ''} onChange={(e) => setEdit({ ...edit, location: e.target.value })} /></label>
           {edit.type === 'match' && <>
-            <label>Αντίπαλος<input value={edit.opponent || ''} onChange={(e) => setEdit({ ...edit, opponent: e.target.value })} /></label>
-            <label>Έδρα<select value={edit.home ? '1' : '0'} onChange={(e) => setEdit({ ...edit, home: e.target.value === '1' })}><option value="1">Εντός</option><option value="0">Εκτός</option></select></label>
-            <label>Γκολ μας<input type="number" value={edit.score_for ?? ''} onChange={(e) => setEdit({ ...edit, score_for: e.target.value === '' ? null : +e.target.value })} /></label>
-            <label>Γκολ αντιπάλου<input type="number" value={edit.score_against ?? ''} onChange={(e) => setEdit({ ...edit, score_against: e.target.value === '' ? null : +e.target.value })} /></label>
+            <label className="f">Αντίπαλος<input value={edit.opponent || ''} onChange={(e) => setEdit({ ...edit, opponent: e.target.value })} /></label>
+            <label className="f">Έδρα<select value={edit.home ? '1' : '0'} onChange={(e) => setEdit({ ...edit, home: e.target.value === '1' })}><option value="1">Εντός</option><option value="0">Εκτός</option></select></label>
+            <label className="f">Γκολ μας<input type="number" value={edit.score_for ?? ''} onChange={(e) => setEdit({ ...edit, score_for: e.target.value === '' ? null : +e.target.value })} /></label>
+            <label className="f">Γκολ αντιπάλου<input type="number" value={edit.score_against ?? ''} onChange={(e) => setEdit({ ...edit, score_against: e.target.value === '' ? null : +e.target.value })} /></label>
           </>}
         </div>
           <label style={{ marginTop: 12 }}>Σημειώσεις<textarea rows={2} value={edit.notes || ''} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></label>

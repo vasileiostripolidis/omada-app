@@ -1,6 +1,6 @@
 {
-  "appId": "gr.omada.app",
-  "appName": "Ομάδα",
+  "appId": "gr.patrasschoolssoccer.app",
+  "appName": "Patras Schools Soccer",
   "webDir": "dist",
   "android": { "allowMixedContent": false },
   "ios": { "contentInset": "always" }

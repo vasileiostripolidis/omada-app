@@ -1,68 +1,102 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { sb, eur, dt, fullName, EVTYPE, type Player, type EventRow } from '../lib/supabase'
-import { useApp } from '../App'
+import { Users, HeartHandshake, Wallet, TrendingUp, Stethoscope, CalendarDays } from 'lucide-react'
+import { sb, eur, dt, fullName, EVTYPE, BRAND, type Player, type EventRow, type Household, type Sponsor } from '../lib/supabase'
+import { useApp, TeamChip } from '../ui'
 
 export default function Dashboard() {
-  const { settings } = useApp()
-  const [k, setK] = useState({ players: 0, teams: 0, owed: 0, monthPaid: 0, overdue: 0 })
-  const [debtors, setDebtors] = useState<(Player & { balance: number })[]>([])
+  const { settings, teams } = useApp()
+  const [k, setK] = useState({ players: 0, families: 0, owed: 0, monthPaid: 0, monthCharged: 0, overdue: 0 })
+  const [debtors, setDebtors] = useState<(Household & { balance: number })[]>([])
   const [medical, setMedical] = useState<Player[]>([])
   const [next, setNext] = useState<EventRow[]>([])
+  const [sponsors, setSponsors] = useState<Sponsor[]>([])
+  const [perTeam, setPerTeam] = useState<Record<string, number>>({})
 
   useEffect(() => {
     (async () => {
-      const month = new Date(); month.setDate(1)
-      const [p, t, b, pay, ev] = await Promise.all([
+      const m = new Date(); const first = new Date(m.getFullYear(), m.getMonth(), 1).toISOString().slice(0, 10)
+      const [p, h, b, pay, ch, ev, sp] = await Promise.all([
         sb.from('players').select('*').eq('active', true),
-        sb.from('teams').select('id', { count: 'exact', head: true }),
-        sb.from('player_balances').select('*'),
-        sb.from('payments').select('amount').gte('paid_at', month.toISOString().slice(0, 10)),
+        sb.from('households').select('*').eq('active', true),
+        sb.from('household_balances').select('*'),
+        sb.from('payments').select('amount').gte('paid_at', first),
+        sb.from('charges').select('amount,status').gte('period', first).neq('status', 'cancelled'),
         sb.from('events').select('*').gte('starts_at', new Date().toISOString()).order('starts_at').limit(5),
+        sb.from('sponsors').select('*').order('sort'),
       ])
       const players = (p.data || []) as Player[]
-      const bal = new Map((b.data || []).map((x) => [x.player_id, x]))
+      const hh = (h.data || []) as Household[]
+      const bal = new Map((b.data || []).map((x) => [x.household_id, x]))
       setK({
-        players: players.length, teams: t.count || 0,
-        owed: (b.data || []).reduce((a, x) => a + Number(x.balance), 0),
+        players: players.length, families: hh.length,
+        owed: hh.reduce((a, x) => a + Math.max(0, Number(bal.get(x.id)?.balance || 0)), 0),
         monthPaid: (pay.data || []).reduce((a, x) => a + Number(x.amount), 0),
-        overdue: (b.data || []).filter((x) => x.overdue_count > 0).length,
+        monthCharged: (ch.data || []).reduce((a, x) => a + Number(x.amount), 0),
+        overdue: hh.filter((x) => Number(bal.get(x.id)?.overdue_count || 0) > 0).length,
       })
-      setDebtors(players.map((pl) => ({ ...pl, balance: Number(bal.get(pl.id)?.balance || 0) })).filter((x) => x.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 6))
+      setDebtors(hh.map((x) => ({ ...x, balance: Number(bal.get(x.id)?.balance || 0) })).filter((x) => x.balance > 0.004).sort((a, z) => z.balance - a.balance).slice(0, 7))
       const soon = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
-      setMedical(players.filter((pl) => !pl.medical_expiry || pl.medical_expiry < soon).slice(0, 6))
+      setMedical(players.filter((pl) => !pl.medical_expiry || pl.medical_expiry < soon).sort((a, z) => (a.medical_expiry || '').localeCompare(z.medical_expiry || '')).slice(0, 7))
       setNext((ev.data || []) as EventRow[])
+      setSponsors((sp.data || []) as Sponsor[])
+      const pt: Record<string, number> = {}; players.forEach((x) => { if (x.team_id) pt[x.team_id] = (pt[x.team_id] || 0) + 1 }); setPerTeam(pt)
     })()
   }, [])
 
+  const pct = k.monthCharged ? Math.min(100, Math.round((k.monthPaid / k.monthCharged) * 100)) : 0
+  const month = new Date().toLocaleDateString('el-GR', { month: 'long', year: 'numeric' })
+
   return (
     <>
-      <h1>Καλώς ήρθες{settings ? `, ${settings.club_name}` : ''} 👋</h1>
-      <div className="grid" style={{ marginBottom: 14 }}>
-        <Link to="/players" className="card kpi"><div className="v">{k.players}</div><div className="l">Ενεργοί παίκτες</div></Link>
-        <Link to="/teams" className="card kpi"><div className="v">{k.teams}</div><div className="l">Ομάδες</div></Link>
-        <Link to="/charges" className="card kpi"><div className="v" style={{ color: 'var(--danger)' }}>{eur(k.owed)}</div><div className="l">Ανεξόφλητα ({k.overdue} ληξιπρόθεσμοι)</div></Link>
-        <div className="card kpi"><div className="v" style={{ color: 'var(--ok)' }}>{eur(k.monthPaid)}</div><div className="l">Εισπράξεις μήνα</div></div>
+      <div className="hero">
+        <img src={settings?.logo_url || BRAND + 'pss-logo.png'} alt="" />
+        <div className="grow"><div className="eyebrow" style={{ color: '#ff6b80' }}>Πίνακας ελέγχου</div><h1>{settings?.club_name || 'Patras Schools Soccer'}</h1>
+          <div className="sub">{new Date().toLocaleDateString('el-GR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div></div>
       </div>
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
-        <div className="card"><h2>💶 Οφειλές</h2>
+
+      <div className="grid" style={{ marginBottom: 16 }}>
+        <Link to="/players" className="card kpi"><div className="ico"><Users size={19} /></div><div className="l">Ενεργοί αθλητές</div><div className="v num">{k.players}</div><div className="s">σε {teams.length} ομάδες</div></Link>
+        <Link to="/families" className="card kpi"><div className="ico"><HeartHandshake size={19} /></div><div className="l">Οικογένειες</div><div className="v num">{k.families}</div><div className="s">λογαριασμοί χρέωσης</div></Link>
+        <Link to="/finance" className="card kpi red"><div className="ico"><Wallet size={19} /></div><div className="l">Ανεξόφλητα</div><div className="v num">{eur(k.owed)}</div><div className="s">{k.overdue} οικογένειες με ληξιπρόθεσμα</div></Link>
+        <Link to="/finance" className="card kpi green"><div className="ico"><TrendingUp size={19} /></div><div className="l">Εισπράξεις {month}</div><div className="v num">{eur(k.monthPaid)}</div>
+          <div className="progress" style={{ marginTop: 4 }}><div style={{ width: pct + '%' }} /></div><div className="s">{pct}% των χρεώσεων του μήνα ({eur(k.monthCharged)})</div></Link>
+      </div>
+
+      <div className="grid-2">
+        <div className="card flush"><div className="card-head"><h2>Οφειλές οικογενειών</h2><Link to="/finance" className="btn ghost sm">Ταμείο</Link></div>
           {debtors.length ? <div className="list">{debtors.map((d) => (
-            <Link key={d.id} to={`/players/${d.id}`} className="item"><div className="grow">{fullName(d)}</div><b>{eur(d.balance)}</b></Link>
-          ))}</div> : <div className="empty">Κανείς δεν χρωστάει 🎉</div>}
+            <Link key={d.id} to={`/families/${d.id}`} className="item"><div className="grow t">{d.name}</div><b className="num" style={{ color: 'var(--red)' }}>{eur(d.balance)}</b></Link>
+          ))}</div> : <div className="empty"><div className="big">Όλα εξοφλημένα</div>Καμία οικογένεια δεν έχει υπόλοιπο.</div>}
         </div>
-        <div className="card"><h2>🩺 Κάρτες υγείας</h2>
+
+        <div className="card flush"><div className="card-head"><h2>Ιατρικές βεβαιώσεις</h2><Stethoscope size={18} color="var(--muted)" /></div>
           {medical.length ? <div className="list">{medical.map((d) => (
-            <Link key={d.id} to={`/players/${d.id}`} className="item"><div className="grow">{fullName(d)}</div>
-              <span className="badge b-over">{d.medical_expiry ? `λήγει ${dt(d.medical_expiry)}` : 'λείπει'}</span></Link>
-          ))}</div> : <div className="empty">Όλες σε ισχύ ✅</div>}
+            <Link key={d.id} to={`/players/${d.id}`} className="item"><div className="grow t">{fullName(d)}</div>
+              <span className={'badge ' + (d.medical_expiry && d.medical_expiry >= new Date().toISOString().slice(0, 10) ? 'b-warn' : 'b-bad')}>{d.medical_expiry ? `λήγει ${dt(d.medical_expiry)}` : 'δεν έχει κατατεθεί'}</span></Link>
+          ))}</div> : <div className="empty"><div className="big">Όλα σε ισχύ</div></div>}
         </div>
-        <div className="card"><h2>📅 Επόμενα</h2>
+
+        <div className="card flush"><div className="card-head"><h2>Επόμενο πρόγραμμα</h2><CalendarDays size={18} color="var(--muted)" /></div>
           {next.length ? <div className="list">{next.map((e) => (
-            <Link key={e.id} to="/events" className="item"><div className="grow">{EVTYPE[e.type]} {e.opponent ? `vs ${e.opponent}` : ''}<div className="muted">{e.location}</div></div>
-              <span className="muted">{new Date(e.starts_at).toLocaleString('el-GR', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</span></Link>
-          ))}</div> : <div className="empty">Δεν υπάρχει προγραμματισμός</div>}
+            <Link key={e.id} to="/events" className="item">
+              <div style={{ textAlign: 'center', width: 46 }}><div className="head" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{new Date(e.starts_at).getDate()}</div><div className="muted" style={{ textTransform: 'uppercase', fontSize: 11 }}>{new Date(e.starts_at).toLocaleDateString('el-GR', { month: 'short' })}</div></div>
+              <div className="grow"><div className="t">{EVTYPE[e.type]}{e.opponent ? ` vs ${e.opponent}` : ''}</div><div className="muted"><TeamChip team={teams.find((t) => t.id === e.team_id)} /> · {new Date(e.starts_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })}</div></div>
+            </Link>
+          ))}</div> : <div className="empty"><div className="big">Κενό πρόγραμμα</div>Πρόσθεσε αγώνες και προπονήσεις.</div>}
+        </div>
+
+        <div className="card flush"><div className="card-head"><h2>Οι ομάδες μας</h2><Link to="/teams" className="btn ghost sm">Όλες</Link></div>
+          <div className="list">{teams.map((t) => (
+            <Link key={t.id} to="/teams" className="item">{t.logo_url ? <img src={t.logo_url} className="avatar sq" alt="" /> : <div className="avatar" style={{ background: t.color || 'var(--navy)' }}>{t.name[0]}</div>}
+              <div className="grow"><div className="t">{t.name}</div><div className="muted">{t.age_group || t.season || ''}</div></div><span className="badge b-navy">{perTeam[t.id] || 0} αθλητές</span></Link>))}</div>
         </div>
       </div>
+
+      {sponsors.length > 0 && <div className="card" style={{ marginTop: 16 }}>
+        <div className="muted" style={{ textAlign: 'center', letterSpacing: 2, fontWeight: 700, fontSize: 11, marginBottom: 12 }}>ΜΕ ΤΗΝ ΥΠΟΣΤΗΡΙΞΗ ΤΩΝ ΧΟΡΗΓΩΝ ΜΑΣ</div>
+        <div className="sponsor-strip">{sponsors.map((s) => s.logo_url ? <img key={s.id} src={s.logo_url} alt={s.name} title={s.name} /> : <b key={s.id} className="head">{s.name}</b>)}</div>
+      </div>}
     </>
   )
 }

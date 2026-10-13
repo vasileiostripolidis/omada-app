@@ -1,4 +1,4 @@
-const C = 'omada-v1'
+const C = 'pss-v2'
 self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(C).then((c) => c.addAll(['./', './index.html']))) })
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
 self.addEventListener('fetch', (e) => {

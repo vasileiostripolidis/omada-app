@@ -1,51 +1,53 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Pencil, Upload, FileText, Mail, Download, Trash2, Phone, Plus } from 'lucide-react'
-import { sb, eur, dt, age, fullName, signedUrl, STATUS, METHOD, type Player, type Team, type Charge, type Payment } from '../lib/supabase'
-import { sendEmail } from '../lib/email'
-import { useApp, Modal } from '../App'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Pencil, Upload, FileText, Trash2, Phone, Mail, Link2, Unlink, Camera, HeartHandshake } from 'lucide-react'
+import { sb, eur, dt, age, fullName, initials, isAdult, signedUrl, today, DOC_TYPES, type Player, type Household, type Guardian } from '../lib/supabase'
+import { useApp, Modal, TeamChip, Empty } from '../ui'
 import { PlayerForm } from './Players'
 
-type FileRow = { id: string; name: string; path: string; mime: string | null; size: number | null; kind: string; uploaded_at: string }
-const KIND: Record<string, string> = { medical: 'Ιατρικό', id: 'Ταυτότητα', photo: 'Φωτογραφία', consent: 'Υπεύθυνη δήλωση', other: 'Άλλο' }
+type FileRow = { id: string; name: string; path: string; mime: string | null; size: number | null; kind: string; doc_type: string | null; uploaded_at: string }
+type LinkRow = { household_id: string; share_pct: number; households: Household }
 
 export default function PlayerDetail() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { toast, settings } = useApp()
+  const { toast, teams } = useApp()
   const [p, setP] = useState<Player | null>(null)
-  const [teams, setTeams] = useState<Team[]>([])
   const [files, setFiles] = useState<FileRow[]>([])
-  const [charges, setCharges] = useState<Charge[]>([])
-  const [payments, setPayments] = useState<Payment[]>([])
+  const [links, setLinks] = useState<LinkRow[]>([])
+  const [guards, setGuards] = useState<Guardian[]>([])
+  const [bal, setBal] = useState<Record<string, number>>({})
   const [stats, setStats] = useState({ apps: 0, goals: 0, assists: 0, minutes: 0, yellow: 0, red: 0, att: 0, total: 0 })
   const [photo, setPhoto] = useState<string>()
   const [tab, setTab] = useState('info')
   const [editing, setEditing] = useState(false)
-  const [kind, setKind] = useState('other')
+  const [docType, setDocType] = useState('medical')
   const [busy, setBusy] = useState(false)
-  const [newCharge, setNewCharge] = useState(false)
-  const [pay, setPay] = useState<Charge | null>(null)
+  const [linking, setLinking] = useState(false)
 
   const load = async () => {
-    const [a, t, f, c, pm, s] = await Promise.all([
+    const [a, f, l, s] = await Promise.all([
       sb.from('players').select('*').eq('id', id).single(),
-      sb.from('teams').select('*'),
       sb.from('player_files').select('*').eq('player_id', id).order('uploaded_at', { ascending: false }),
-      sb.from('charges').select('*').eq('player_id', id).order('created_at', { ascending: false }),
-      sb.from('payments').select('*').eq('player_id', id).order('paid_at', { ascending: false }),
+      sb.from('player_households').select('household_id, share_pct, households(*)').eq('player_id', id),
       sb.from('player_stats').select('*, events(type)').eq('player_id', id),
     ])
-    setP(a.data); setTeams(t.data || []); setFiles(f.data || []); setCharges(c.data || []); setPayments(pm.data || [])
+    setP(a.data); setFiles(f.data || [])
+    const ls = (l.data || []) as unknown as LinkRow[]; setLinks(ls)
+    const hids = ls.map((x) => x.household_id)
+    if (hids.length) {
+      const [g, b] = await Promise.all([sb.from('guardians').select('*').in('household_id', hids), sb.from('household_balances').select('*').in('household_id', hids)])
+      setGuards(g.data || []); setBal(Object.fromEntries((b.data || []).map((x) => [x.household_id, Number(x.balance)])))
+    } else { setGuards([]); setBal({}) }
     const rows = (s.data || []) as { present: boolean; minutes: number; goals: number; assists: number; yellow: number; red: number; events: { type: string } }[]
     const m = rows.filter((r) => r.events?.type === 'match' && r.present)
-    setStats({ apps: m.length, goals: sum(m, 'goals'), assists: sum(m, 'assists'), minutes: sum(m, 'minutes'), yellow: sum(m, 'yellow'), red: sum(m, 'red'), att: rows.filter((r) => r.present).length, total: rows.length })
-    if (a.data?.photo_path) setPhoto(await signedUrl(a.data.photo_path))
+    const sum = (k: 'goals' | 'assists' | 'minutes' | 'yellow' | 'red') => m.reduce((x, r) => x + (Number(r[k]) || 0), 0)
+    setStats({ apps: m.length, goals: sum('goals'), assists: sum('assists'), minutes: sum('minutes'), yellow: sum('yellow'), red: sum('red'), att: rows.filter((r) => r.present).length, total: rows.length })
+    setPhoto(a.data?.photo_path ? await signedUrl(a.data.photo_path) : undefined)
   }
   useEffect(() => { load() }, [id])
   if (!p) return null
-
-  const balance = charges.filter((c) => c.status === 'pending' || c.status === 'partial').reduce((x, c) => x + c.amount - c.paid_amount, 0)
+  const t = today()
 
   async function upload(e: React.ChangeEvent<HTMLInputElement>, asPhoto = false) {
     const list = Array.from(e.target.files || []); if (!list.length) return
@@ -55,145 +57,125 @@ export default function PlayerDetail() {
       const up = await sb.storage.from('player-files').upload(path, file)
       if (up.error) { toast('Σφάλμα: ' + up.error.message); continue }
       if (asPhoto) await sb.from('players').update({ photo_path: path }).eq('id', id)
-      else await sb.from('player_files').insert({ player_id: id, name: file.name, path, mime: file.type, size: file.size, kind })
+      else await sb.from('player_files').insert({ player_id: id, name: file.name, path, mime: file.type, size: file.size, kind: 'other', doc_type: docType })
     }
-    setBusy(false); toast('Ανέβηκε ✓'); e.target.value = ''; load()
+    setBusy(false); toast(asPhoto ? 'Η φωτογραφία ενημερώθηκε ✓' : 'Τα έγγραφα ανέβηκαν ✓'); e.target.value = ''; load()
   }
   async function openFile(f: FileRow) { const u = await signedUrl(f.path); if (u) window.open(u, '_blank') }
   async function delFile(f: FileRow) {
     if (!confirm(`Διαγραφή «${f.name}»;`)) return
     await sb.storage.from('player-files').remove([f.path]); await sb.from('player_files').delete().eq('id', f.id); load()
   }
-  async function pdf(send: boolean) {
-    if (!settings || !p) return
-    setBusy(true)
-    try {
-      const { chargesPdf, pdfBase64 } = await import('../lib/pdf')
-      const doc = await chargesPdf(p, charges.filter((c) => c.status !== 'paid'), settings)
-      const fname = `Xrewseis_${p.last_name}_${p.first_name}.pdf`
-      if (!send) { doc.save(fname); return }
-      if (!p.guardian_email) return toast('Δεν υπάρχει email κηδεμόνα')
-      await sendEmail({
-        to: p.guardian_email, kind: 'charges', player_id: p.id,
-        subject: `${settings.club_name} – Κατάσταση χρεώσεων ${fullName(p)}`,
-        html: `<p>Αγαπητέ/ή ${p.guardian_name || 'γονέα'},</p><p>Σας επισυνάπτουμε την κατάσταση χρεώσεων για τον/την <b>${fullName(p)}</b>. Υπόλοιπο: <b>${eur(balance)}</b>.</p>${settings.iban ? `<p>IBAN: ${settings.iban}</p>` : ''}<p>${settings.email_footer || ''}</p><p>${settings.club_name}</p>`,
-        attachments: [{ filename: fname, content: pdfBase64(doc) }],
-      })
-      toast('Στάλθηκε email ✓')
-    } catch (err) { toast((err as Error).message) } finally { setBusy(false) }
+  async function unlink(hid: string) { if (confirm('Αποσύνδεση του αθλητή από αυτή την οικογένεια;')) { await sb.from('player_households').delete().eq('player_id', id).eq('household_id', hid); load() } }
+  async function setShare(hid: string, v: number) { await sb.from('player_households').update({ share_pct: v }).eq('player_id', id).eq('household_id', hid); toast('Το ποσοστό ενημερώθηκε ✓'); load() }
+  async function selfPay() {
+    const h = await sb.from('households').insert({ name: `${p!.last_name} ${p!.first_name} (ενήλικας)` }).select('id').single()
+    if (h.error) return toast(h.error.message)
+    await sb.from('guardians').insert({ household_id: h.data.id, first_name: p!.first_name, last_name: p!.last_name, relation: 'Ο ίδιος (ενήλικας)', email: p!.email, phone: p!.phone })
+    await sb.from('player_households').insert({ player_id: id, household_id: h.data.id, share_pct: 100 })
+    toast('Δημιουργήθηκε λογαριασμός στο όνομα του αθλητή ✓'); load()
   }
-  async function cancelCharge(c: Charge) { if (confirm('Ακύρωση χρέωσης;')) { await sb.from('charges').update({ status: 'cancelled' }).eq('id', c.id); load() } }
-  async function toggleActive() { await sb.from('players').update({ active: !p!.active }).eq('id', id); load() }
-  async function remove() { if (confirm('Οριστική διαγραφή παίκτη και όλων των δεδομένων του;')) { await sb.from('players').delete().eq('id', id); nav('/players') } }
+  async function remove() { if (confirm('Οριστική διαγραφή αθλητή και όλων των εγγράφων του;')) { await sb.from('players').delete().eq('id', id); nav('/players') } }
+
+  const docBadge = (k: string, label: string, exp: string | null) => {
+    const has = files.some((f) => (f.doc_type || f.kind) === k)
+    const ok = exp ? exp >= t : has
+    return <div className="card" style={{ padding: 14 }}><div className="muted" style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, letterSpacing: .6 }}>{label}</div>
+      <div className="row between" style={{ marginTop: 6 }}><b>{exp ? `έως ${dt(exp)}` : has ? 'Κατατέθηκε' : 'Λείπει'}</b><span className={'badge ' + (ok ? 'b-ok' : 'b-bad')}>{ok ? 'OK' : exp ? 'Έληξε' : 'Λείπει'}</span></div></div>
+  }
 
   return (
     <>
-      <button className="btn ghost sm" onClick={() => nav(-1)} style={{ marginBottom: 10 }}><ArrowLeft size={16} />Πίσω</button>
-      <div className="card row" style={{ marginBottom: 12 }}>
-        <label style={{ cursor: 'pointer' }} title="Αλλαγή φωτογραφίας">
-          {photo ? <img src={photo} className="avatar lg" /> : <div className="avatar lg">{p.first_name[0]}{p.last_name[0]}</div>}
+      <button className="btn ghost sm" onClick={() => nav(-1)} style={{ marginBottom: 12 }}><ArrowLeft size={16} />Πίσω</button>
+      <div className="card row" style={{ marginBottom: 16, gap: 18 }}>
+        <label style={{ cursor: 'pointer', position: 'relative' }} title="Αλλαγή φωτογραφίας">
+          {photo ? <img src={photo} className="avatar lg" alt="" /> : <div className="avatar lg">{initials(p)}</div>}
+          <span className="iconbtn" style={{ position: 'absolute', right: -4, bottom: -4, width: 30, height: 30, borderRadius: 99 }}><Camera size={15} /></span>
           <input type="file" accept="image/*" hidden onChange={(e) => upload(e, true)} />
         </label>
         <div className="grow">
-          <h1 style={{ margin: 0 }}>{fullName(p)} {p.jersey_number != null && <span className="muted">#{p.jersey_number}</span>}</h1>
-          <div className="muted">{[teams.find((t) => t.id === p.team_id)?.name, p.position, age(p.birth_date) != null && `${age(p.birth_date)} ετών`].filter(Boolean).join(' · ')}</div>
-          <div style={{ marginTop: 6 }}>{balance > 0 ? <span className="badge b-over">Οφειλή {eur(balance)}</span> : <span className="badge b-paid">Χωρίς οφειλές</span>} {!p.active && <span className="badge">Ανενεργός</span>}</div>
+          <div className="eyebrow">{p.position || 'Αθλητής'}{p.jersey_number != null ? ` · #${p.jersey_number}` : ''}</div>
+          <h1>{fullName(p)}</h1>
+          <div className="row" style={{ marginTop: 8 }}><TeamChip team={teams.find((x) => x.id === p.team_id)} />
+            {age(p.birth_date) != null && <span className="badge">{age(p.birth_date)} ετών</span>}
+            {isAdult(p) && <span className="badge b-info">Ενήλικας</span>}
+            {!p.active && <span className="badge">Ανενεργός</span>}</div>
         </div>
-        <div className="row">
-          {p.guardian_phone && <a className="btn ghost sm" href={`tel:${p.guardian_phone}`}><Phone size={16} />Κλήση</a>}
-          <button className="btn sm" onClick={() => setEditing(true)}><Pencil size={16} />Επεξεργασία</button>
-        </div>
+        <button className="btn" onClick={() => setEditing(true)}><Pencil size={16} />Επεξεργασία</button>
       </div>
 
-      <div className="tabs">{[['info', 'Στοιχεία'], ['charges', 'Χρεώσεις'], ['files', `Αρχεία (${files.length})`], ['stats', 'Στατιστικά']].map(([k, l]) =>
+      <div className="tabs">{[['info', 'Στοιχεία'], ['family', `Γονείς & Πληρωμές (${links.length})`], ['docs', `Έγγραφα (${files.length})`], ['stats', 'Στατιστικά']].map(([k, l]) =>
         <button key={k} className={'tab' + (tab === k ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>)}</div>
 
-      {tab === 'info' && <div className="card"><div className="form">
-        {[['Ημ. γέννησης', dt(p.birth_date)], ['Κηδεμόνας', p.guardian_name], ['Τηλέφωνο', p.guardian_phone], ['Email', p.guardian_email], ['2ος κηδεμόνας', [p.guardian2_name, p.guardian2_phone].filter(Boolean).join(' · ')],
-          ['Διεύθυνση', p.address], ['ΑΜΚΑ', p.amka], ['Κάρτα υγείας έως', dt(p.medical_expiry)], ['Ιατρικά', p.medical_notes], ['Οικογένεια', p.family_code], ['Συνδρομή', p.monthly_fee ? eur(p.monthly_fee) : 'Προεπιλογή'], ['Έκπτωση', `${p.discount_pct || 0}%`], ['Σημειώσεις', p.notes]]
-          .map(([l, v]) => <div key={l}><div className="muted">{l}</div><div>{v || '—'}</div></div>)}
-      </div>
-        <div className="row" style={{ marginTop: 16 }}>
-          <button className="btn ghost sm" onClick={toggleActive}>{p.active ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}</button>
-          <button className="btn danger sm" onClick={remove}><Trash2 size={15} />Διαγραφή</button>
-        </div>
+      {tab === 'info' && <div className="stack">
+        <div className="grid">{docBadge('medical', 'Ιατρική βεβαίωση', p.medical_expiry)}{docBadge('card', 'Δελτίο αθλητή', p.card_expiry)}</div>
+        <div className="card"><div className="form">
+          {[['Ημ. γέννησης', dt(p.birth_date)], ['ΑΜΚΑ', p.amka], ['Αρ. δελτίου', p.card_number], ['Διεύθυνση', p.address], ['Κινητό', p.phone], ['Email', p.email],
+            ['Εγγραφή', dt(p.joined_at)], ['Ιατρικές σημειώσεις', p.medical_notes], ['Σημειώσεις', p.notes]]
+            .map(([l, v]) => <div key={l}><div className="muted" style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, letterSpacing: .6 }}>{l}</div><div style={{ marginTop: 3 }}>{v || '—'}</div></div>)}
+        </div></div>
+        <div className="row"><button className="btn ghost sm" onClick={async () => { await sb.from('players').update({ active: !p.active }).eq('id', id); load() }}>{p.active ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}</button>
+          <button className="btn danger sm" onClick={remove}><Trash2 size={15} />Διαγραφή αθλητή</button></div>
       </div>}
 
-      {tab === 'charges' && <div className="card">
-        <div className="row" style={{ marginBottom: 12 }}>
-          <button className="btn sm" onClick={() => setNewCharge(true)}><Plus size={16} />Νέα χρέωση</button>
-          <button className="btn ghost sm" disabled={busy} onClick={() => pdf(false)}><Download size={16} />PDF</button>
-          <button className="btn ghost sm" disabled={busy} onClick={() => pdf(true)}><Mail size={16} />Αποστολή PDF με email</button>
-        </div>
-        <div className="scroll"><table><thead><tr><th>Περιγραφή</th><th>Λήξη</th><th>Ποσό</th><th>Πληρώθηκε</th><th>Κατάσταση</th><th></th></tr></thead><tbody>
-          {charges.map((c) => <tr key={c.id}><td>{c.description}</td><td>{dt(c.due_date)}</td><td>{eur(c.amount)}</td><td>{eur(c.paid_amount)}</td>
-            <td><span className={`badge b-${c.status}`}>{STATUS[c.status]}</span></td>
-            <td className="row" style={{ flexWrap: 'nowrap' }}>{(c.status === 'pending' || c.status === 'partial') && <><button className="btn sm" onClick={() => setPay(c)}>Πληρωμή</button><button className="btn ghost sm" onClick={() => cancelCharge(c)}>✕</button></>}</td></tr>)}
-        </tbody></table></div>
-        {!charges.length && <div className="empty">Καμία χρέωση ακόμα</div>}
-        {payments.length > 0 && <><h2 style={{ marginTop: 18 }}>Πληρωμές</h2><div className="list">{payments.map((x) =>
-          <div className="item" key={x.id}><div className="grow">{dt(x.paid_at)} · {METHOD[x.method]}<div className="muted">{x.note}</div></div><b>{eur(x.amount)}</b></div>)}</div></>}
+      {tab === 'family' && <div className="stack">
+        {links.length === 0 && <div className="card"><Empty title="Χωρίς γονείς" text="Σύνδεσε τον αθλητή με την οικογένειά του για να χρεώνεται αυτόματα.">
+          <div className="row" style={{ justifyContent: 'center' }}><button className="btn red" onClick={() => setLinking(true)}><Link2 size={16} />Σύνδεση με οικογένεια</button>
+            {isAdult(p) && <button className="btn ghost" onClick={selfPay}>Πληρώνει ο ίδιος</button>}</div></Empty></div>}
+        {links.map((l) => <div className="card flush" key={l.household_id}>
+          <div className="card-head"><Link to={`/families/${l.household_id}`} className="row"><HeartHandshake size={18} color="var(--red)" /><h2>{l.households.name}</h2></Link>
+            <div className="row"><span className={'badge ' + ((bal[l.household_id] || 0) > 0.004 ? 'b-bad' : 'b-ok')}>{(bal[l.household_id] || 0) > 0.004 ? `Οφειλή ${eur(bal[l.household_id])}` : 'Εξοφλημένοι'}</span>
+              <button className="iconbtn" title="Αποσύνδεση" onClick={() => unlink(l.household_id)}><Unlink size={15} /></button></div></div>
+          <div className="list">{guards.filter((g) => g.household_id === l.household_id).map((g) => <div className="item" key={g.id}>
+            <div className="avatar" style={{ background: 'var(--navy-3)' }}>{initials(g)}</div>
+            <div className="grow"><div className="t">{g.first_name} {g.last_name}</div><div className="muted">{g.relation}{g.receives_emails ? '' : ' · χωρίς ειδοποιήσεις'}</div></div>
+            {g.phone && <a className="iconbtn" href={`tel:${g.phone}`} title={g.phone}><Phone size={15} /></a>}
+            {g.email && <a className="iconbtn" href={`mailto:${g.email}`} title={g.email}><Mail size={15} /></a>}
+          </div>)}</div>
+          <div className="item" style={{ background: 'var(--soft)' }}><div className="grow muted">Ποσοστό χρέωσης του αθλητή σε αυτή την οικογένεια (π.χ. 50% αν πληρώνουν χωριστά οι γονείς)</div>
+            <select style={{ width: 110 }} value={Number(l.share_pct)} onChange={(e) => setShare(l.household_id, Number(e.target.value))}>{[100, 75, 50, 25, 0].map((v) => <option key={v} value={v}>{v}%</option>)}</select></div>
+        </div>)}
+        {links.length > 0 && <div className="row"><button className="btn ghost" onClick={() => setLinking(true)}><Link2 size={16} />Σύνδεση και με άλλη οικογένεια (χωριστοί γονείς)</button></div>}
       </div>}
 
-      {tab === 'files' && <div className="card">
-        <div className="row" style={{ marginBottom: 12 }}>
-          <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ width: 'auto' }}>{Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-          <label className="btn sm" style={{ cursor: 'pointer' }}><Upload size={16} />{busy ? 'Ανέβασμα…' : 'Ανέβασμα αρχείων'}<input type="file" multiple hidden onChange={(e) => upload(e)} /></label>
-        </div>
+      {tab === 'docs' && <div className="card flush">
+        <div className="card-head" style={{ flexWrap: 'wrap' }}><h2>Έγγραφα αθλητή</h2>
+          <div className="row"><select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ width: 'auto' }}>{Object.entries(DOC_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+            <label className="btn red sm" style={{ cursor: 'pointer' }}><Upload size={15} />{busy ? 'Ανέβασμα…' : 'Ανέβασμα'}<input type="file" multiple hidden accept="image/*,application/pdf,.doc,.docx" onChange={(e) => upload(e)} /></label></div></div>
         {files.length ? <div className="list">{files.map((f) => (
-          <div className="item" key={f.id}><FileText size={22} />
-            <div className="grow" style={{ cursor: 'pointer' }} onClick={() => openFile(f)}><b>{f.name}</b><div className="muted">{KIND[f.kind]} · {dt(f.uploaded_at)} · {((f.size || 0) / 1024).toFixed(0)} KB</div></div>
-            <button className="btn ghost sm" onClick={() => delFile(f)}><Trash2 size={15} /></button></div>
-        ))}</div> : <div className="empty">Ανέβασε κάρτα υγείας, ταυτότητα, υπεύθυνη δήλωση, φωτογραφίες…</div>}
+          <div className="item" key={f.id}><div className="avatar sq" style={{ display: 'grid', placeItems: 'center' }}><FileText size={20} color="var(--navy)" /></div>
+            <div className="grow" style={{ cursor: 'pointer' }} onClick={() => openFile(f)}><div className="t">{f.name}</div><div className="muted">{DOC_TYPES[f.doc_type || f.kind] || 'Άλλο'} · {dt(f.uploaded_at)} · {((f.size || 0) / 1024).toFixed(0)} KB</div></div>
+            <button className="iconbtn" onClick={() => delFile(f)} title="Διαγραφή"><Trash2 size={15} /></button></div>
+        ))}</div> : <Empty title="Κανένα έγγραφο" text="Ανέβασε ιατρική βεβαίωση, δελτίο, ταυτότητα, υπεύθυνη δήλωση…" />}
       </div>}
 
       {tab === 'stats' && <div className="grid">
         {[['Συμμετοχές', stats.apps], ['Γκολ', stats.goals], ['Ασίστ', stats.assists], ['Λεπτά', stats.minutes], ['Κίτρινες', stats.yellow], ['Κόκκινες', stats.red],
           ['Παρουσία', stats.total ? Math.round((stats.att / stats.total) * 100) + '%' : '—']].map(([l, v]) =>
-          <div className="card kpi" key={l as string}><div className="v">{v}</div><div className="l">{l}</div></div>)}
+          <div className="card kpi" key={l as string}><div className="l">{l}</div><div className="v num">{v}</div></div>)}
       </div>}
 
-      {editing && <PlayerForm player={p} teams={teams} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
-      {newCharge && <ChargeForm playerId={p.id} onClose={() => setNewCharge(false)} onSaved={() => { setNewCharge(false); load() }} />}
-      {pay && <PayForm charge={pay} onClose={() => setPay(null)} onSaved={() => { setPay(null); load() }} />}
+      {editing && <PlayerForm player={p} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+      {linking && <LinkFamily playerId={p.id} exclude={links.map((l) => l.household_id)} onClose={() => setLinking(false)} onDone={() => { setLinking(false); load() }} />}
     </>
   )
 }
 
-const sum = <T,>(a: T[], k: keyof T) => a.reduce((x, r) => x + (Number(r[k]) || 0), 0)
-
-export function ChargeForm({ playerId, onClose, onSaved }: { playerId: string; onClose: () => void; onSaved: () => void }) {
+function LinkFamily({ playerId, exclude, onClose, onDone }: { playerId: string; exclude: string[]; onClose: () => void; onDone: () => void }) {
   const { toast } = useApp()
-  const [f, setF] = useState({ description: '', amount: '', due_date: new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10) })
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    const r = await sb.from('charges').insert({ player_id: playerId, description: f.description, amount: Number(f.amount), due_date: f.due_date })
+  const [hh, setHh] = useState<Household[]>([])
+  const [q, setQ] = useState('')
+  const [share, setShare] = useState(exclude.length ? 50 : 100)
+  useEffect(() => { sb.from('households').select('*').eq('active', true).order('name').then(({ data }) => setHh((data || []).filter((h) => !exclude.includes(h.id)))) }, [])
+  async function pick(h: Household) {
+    const r = await sb.from('player_households').insert({ player_id: playerId, household_id: h.id, share_pct: share })
     if (r.error) return toast(r.error.message)
-    toast('Η χρέωση προστέθηκε ✓'); onSaved()
+    toast(`Συνδέθηκε με «${h.name}» ✓`); onDone()
   }
-  return <Modal title="Νέα χρέωση" onClose={onClose}><form onSubmit={save} style={{ display: 'grid', gap: 12 }}>
-    <label>Περιγραφή<input list="desc" required value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
-      <datalist id="desc">{['Εγγραφή', 'Εμφάνιση / στολή', 'Τουρνουά', 'Καλοκαιρινό camp', 'Ασφάλιση', 'Εκδρομή'].map((x) => <option key={x} value={x} />)}</datalist></label>
-    <label>Ποσό €<input type="number" step="0.01" required value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></label>
-    <label>Λήξη<input type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} /></label>
-    <button className="btn" style={{ justifyContent: 'center' }}>Προσθήκη</button>
-  </form></Modal>
-}
-
-export function PayForm({ charge, onClose, onSaved }: { charge: Charge; onClose: () => void; onSaved: () => void }) {
-  const { toast } = useApp()
-  const [f, setF] = useState({ amount: String((charge.amount - charge.paid_amount).toFixed(2)), method: 'cash', paid_at: new Date().toISOString().slice(0, 10), note: '' })
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    const r = await sb.from('payments').insert({ charge_id: charge.id, player_id: charge.player_id, amount: Number(f.amount), method: f.method, paid_at: f.paid_at, note: f.note || null })
-    if (r.error) return toast(r.error.message)
-    toast('Η πληρωμή καταχωρήθηκε ✓'); onSaved()
-  }
-  return <Modal title={`Πληρωμή: ${charge.description}`} onClose={onClose}><form onSubmit={save} style={{ display: 'grid', gap: 12 }}>
-    <label>Ποσό €<input type="number" step="0.01" required value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></label>
-    <div className="row">{Object.entries(METHOD).map(([k, l]) => <button type="button" key={k} className={'tab' + (f.method === k ? ' on' : '')} onClick={() => setF({ ...f, method: k })}>{l}</button>)}</div>
-    <label>Ημερομηνία<input type="date" value={f.paid_at} onChange={(e) => setF({ ...f, paid_at: e.target.value })} /></label>
-    <label>Σημείωση<input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></label>
-    <button className="btn" style={{ justifyContent: 'center' }}>Καταχώρηση πληρωμής</button>
-  </form></Modal>
+  return <Modal title="Σύνδεση με οικογένεια" onClose={onClose}>
+    <div className="row" style={{ marginBottom: 12 }}><input placeholder="Αναζήτηση οικογένειας…" value={q} onChange={(e) => setQ(e.target.value)} className="grow" style={{ width: 'auto', flex: 1 }} />
+      <select style={{ width: 120 }} value={share} onChange={(e) => setShare(Number(e.target.value))}>{[100, 75, 50, 25].map((v) => <option key={v} value={v}>{v}%</option>)}</select></div>
+    <div className="list">{hh.filter((h) => h.name.toLowerCase().includes(q.toLowerCase())).map((h) => <button key={h.id} className="item click" style={{ border: 0, background: 'none', width: '100%', textAlign: 'left', padding: '12px 6px' }} onClick={() => pick(h)}><HeartHandshake size={18} color="var(--red)" /><b className="grow">{h.name}</b></button>)}</div>
+    {!hh.length && <Empty title="Δεν υπάρχουν οικογένειες" text="Δημιούργησε οικογένεια από τη σελίδα «Γονείς & Οικογένειες»." />}
+  </Modal>
 }
