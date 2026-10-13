@@ -55,6 +55,7 @@ export async function evaluationPdf(d: ReportData) {
     if (!defs.length) continue
     if (y > 240) { doc.addPage(); y = 20 }
     doc.setFont('LS', 'bold'); doc.setFontSize(11); doc.setTextColor(NAVY); doc.text(up(label), 14, y); y += 2
+    const tone: (string | null)[] = []
     const firstWith = (m: MetricDef) => d.periods.find((p) => d.values[p]?.[m.id] != null)
     const lastWith = (m: MetricDef) => [...d.periods].reverse().find((p) => d.values[p]?.[m.id] != null)
     autoTable(doc, {
@@ -65,14 +66,15 @@ export async function evaluationPdf(d: ReportData) {
         const va = a ? d.values[a][m.id] : undefined, vb = b ? d.values[b][m.id] : undefined
         const ch = va != null && vb != null && a !== b ? vb - va : null
         const good = ch != null && (m.higher_better ? ch > 0 : ch < 0)
+        tone.push(ch == null || ch === 0 ? null : good ? '#138a4a' : '#a35a00')
         return [`${m.name}${m.unit ? ` (${m.unit})` : ''}`, fmt(va, m.decimals), fmt(vb, m.decimals),
-          ch == null || ch === 0 ? '—' : `${ch > 0 ? '+' : ''}${fmt(ch, m.decimals)} ${good ? '▲' : '▼'}`, fmt(b ? d.teamAvg[b]?.[m.id] : undefined, m.decimals)]
+          ch == null || ch === 0 ? '—' : `${ch > 0 ? '+' : ''}${fmt(ch, m.decimals)}`, fmt(b ? d.teamAvg[b]?.[m.id] : undefined, m.decimals)]
       }),
       styles: { font: 'LS', fontSize: 9, cellPadding: 2.2 },
       headStyles: { font: 'LS', fontStyle: 'bold', fillColor: NAVY, textColor: '#fff' },
       alternateRowStyles: { fillColor: '#f6f8fb' },
       columnStyles: { 1: { halign: 'center' }, 2: { halign: 'center', fontStyle: 'bold' }, 3: { halign: 'center' }, 4: { halign: 'center' } },
-      didParseCell: (h) => { if (h.section === 'body' && h.column.index === 3) { const t = String(h.cell.raw); if (t.includes('▲')) h.cell.styles.textColor = '#138a4a'; else if (t.includes('▼')) h.cell.styles.textColor = '#a35a00' } },
+      didParseCell: (h) => { if (h.section === 'body' && h.column.index === 3 && tone[h.row.index]) { h.cell.styles.textColor = tone[h.row.index]!; h.cell.styles.fontStyle = 'bold' } },
     })
     // @ts-expect-error plugin field
     y = doc.lastAutoTable.finalY + 8

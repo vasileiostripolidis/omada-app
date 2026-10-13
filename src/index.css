@@ -129,7 +129,8 @@ td.r, th.r { text-align: right; }
 .b-over, .b-bad { background: var(--bad-bg); color: var(--bad); }
 .b-navy { background: var(--navy); color: #fff; }
 
-.tabs { display: flex; gap: 4px; overflow-x: auto; margin-bottom: 16px; border-bottom: 2px solid var(--line); }
+.tabs { display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; margin-bottom: 16px; border-bottom: 2px solid var(--line); }
+.tabs::-webkit-scrollbar { display: none; }
 .tab { padding: 10px 14px; border: 0; background: none; font-weight: 700; white-space: nowrap; cursor: pointer; color: var(--muted); font-size: 14px; border-bottom: 3px solid transparent; margin-bottom: -2px; }
 .tab.on { color: var(--navy); border-bottom-color: var(--red); }
 .pills { display: flex; gap: 6px; flex-wrap: wrap; }

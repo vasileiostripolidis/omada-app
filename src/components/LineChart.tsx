@@ -11,7 +11,8 @@ export default function LineChart({ title, unit, points, avg, decimals = 1, high
   const first = points.find((p) => p.v != null)
   if (!vals.length) return <div className="card chart"><div className="chart-t">{title}</div><div className="muted" style={{ padding: '30px 0', textAlign: 'center' }}>Χωρίς μετρήσεις</div></div>
   let lo = Math.min(...vals), hi = Math.max(...vals)
-  if (lo === hi) { lo -= 1; hi += 1 }
+  const minSpan = Math.max(Math.abs((lo + hi) / 2) * 0.06, 0.5)
+  if (hi - lo < minSpan) { const m = (lo + hi) / 2; lo = m - minSpan / 2; hi = m + minSpan / 2 }
   const pad = (hi - lo) * 0.15; lo -= pad; hi += pad
   const n = points.length
   const x = (i: number) => pl + (n === 1 ? (W - pl - pr) / 2 : (i * (W - pl - pr)) / (n - 1))
