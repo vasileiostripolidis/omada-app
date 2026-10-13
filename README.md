@@ -23,3 +23,15 @@ React + Vite + TypeScript, Supabase (Postgres, Auth, Storage, Edge Functions, pg
 npm install
 npm run dev
 ```
+
+## Εφαρμογή για Play Store / App Store (Capacitor)
+Ο ίδιος κώδικας γίνεται native εφαρμογή:
+```
+npm run build
+npx cap add android      # χρειάζεται Android Studio
+npx cap add ios          # χρειάζεται Mac + Xcode
+npx cap sync
+npx cap open android     # → Build → Generate Signed Bundle (.aab) → Google Play Console
+npx cap open ios         # → Product → Archive → App Store Connect
+```
+Λογαριασμοί: Google Play Developer (25$ εφάπαξ), Apple Developer (99$/έτος).

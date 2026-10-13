@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Pencil, Upload, FileText, Mail, Download, Trash2, Phone, Plus } from 'lucide-react'
 import { sb, eur, dt, age, fullName, signedUrl, STATUS, METHOD, type Player, type Team, type Charge, type Payment } from '../lib/supabase'
-import { chargesPdf, pdfBase64 } from '../lib/pdf'
 import { sendEmail } from '../lib/email'
 import { useApp, Modal } from '../App'
 import { PlayerForm } from './Players'
@@ -69,6 +68,7 @@ export default function PlayerDetail() {
     if (!settings || !p) return
     setBusy(true)
     try {
+      const { chargesPdf, pdfBase64 } = await import('../lib/pdf')
       const doc = await chargesPdf(p, charges.filter((c) => c.status !== 'paid'), settings)
       const fname = `Xrewseis_${p.last_name}_${p.first_name}.pdf`
       if (!send) { doc.save(fname); return }

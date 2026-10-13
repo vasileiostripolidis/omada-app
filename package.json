@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.3",
     "@supabase/supabase-js": "^2.117.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
@@ -19,6 +20,9 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Zap, Mail } from 'lucide-react'
 import { sb, eur, dt, fullName, STATUS, type Charge, type Player } from '../lib/supabase'
-import { chargesPdf, pdfBase64 } from '../lib/pdf'
 import { sendEmail } from '../lib/email'
 import { useApp, Modal } from '../App'
 import { PayForm } from './PlayerDetail'
@@ -45,7 +44,8 @@ export default function Charges() {
       setBusy(`Αποστολή ${n}/${byPlayer.size}…`)
       if (!p.guardian_email) continue
       try {
-        const doc = await chargesPdf(p, cs, settings)
+        const { chargesPdf, pdfBase64 } = await import('../lib/pdf')
+      const doc = await chargesPdf(p, cs, settings)
         const bal = cs.reduce((a, c) => a + c.amount - c.paid_amount, 0)
         await sendEmail({ to: p.guardian_email, player_id: p.id, kind: 'reminder', subject: `${settings.club_name} – Υπενθύμιση οφειλής ${fullName(p)}`,
           html: `<p>Αγαπητέ/ή ${p.guardian_name || 'γονέα'},</p><p>Υπενθυμίζουμε ότι το υπόλοιπο για τον/την <b>${fullName(p)}</b> είναι <b>${eur(bal)}</b>. Επισυνάπτεται αναλυτική κατάσταση.</p>${settings.iban ? `<p>IBAN: ${settings.iban}</p>` : ''}<p>${settings.email_footer || ''}</p>`,
