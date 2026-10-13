@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, HeartHandshake, Wallet, TrendingUp, Stethoscope, CalendarDays, Activity } from 'lucide-react'
+import { Users, HeartHandshake, Wallet, TrendingUp, Stethoscope, CalendarDays, Activity, IdCard, Bandage, Gauge } from 'lucide-react'
 import { sb, eur, dt, fullName, EVTYPE, BRAND, type Player, type EventRow, type Household, type Sponsor } from '../lib/supabase'
 import { useApp, TeamChip, Empty } from '../ui'
-import { eligibility } from '../lib/supabase'
+import { eligibility, openInjuries, type Staff } from '../lib/supabase'
+import { staffAlerts } from './Staff'
 
 export default function Dashboard() {
   const { isCoach } = useApp()
@@ -18,6 +19,8 @@ function OfficeDashboard() {
   const [next, setNext] = useState<EventRow[]>([])
   const [sponsors, setSponsors] = useState<Sponsor[]>([])
   const [perTeam, setPerTeam] = useState<Record<string, number>>({})
+  const [staffW, setStaffW] = useState<{ s: Staff; a: ReturnType<typeof staffAlerts> }[]>([])
+  const [injured, setInjured] = useState<{ id: string; name: string; part: string | null; ret: string | null }[]>([])
 
   useEffect(() => {
     (async () => {
@@ -46,6 +49,8 @@ function OfficeDashboard() {
       setMedical(players.filter((pl) => !pl.medical_expiry || pl.medical_expiry < soon).sort((a, z) => (a.medical_expiry || '').localeCompare(z.medical_expiry || '')).slice(0, 7))
       setNext((ev.data || []) as EventRow[])
       setSponsors((sp.data || []) as Sponsor[])
+      sb.from('staff').select('*').eq('active', true).then(({ data }) => setStaffW(((data || []) as Staff[]).map((x) => ({ s: x, a: staffAlerts(x).filter((y) => y.level !== 'missing') })).filter((x) => x.a.length)))
+      sb.from('injuries').select('player_id, body_part, expected_return').is('returned_at', null).then(({ data }) => setInjured((data || []).map((i) => { const pl = players.find((x) => x.id === i.player_id); return { id: i.player_id, name: pl ? fullName(pl) : '—', part: i.body_part, ret: i.expected_return } })))
       const pt: Record<string, number> = {}; players.forEach((x) => { if (x.team_id) pt[x.team_id] = (pt[x.team_id] || 0) + 1 }); setPerTeam(pt)
     })()
   }, [])
@@ -82,6 +87,13 @@ function OfficeDashboard() {
           ))}</div> : <div className="empty"><div className="big">Όλα σε ισχύ</div></div>}
         </div>
 
+        {staffW.length > 0 && <div className="card flush"><div className="card-head"><h2>Διπλώματα & πιστοποιητικά προσωπικού</h2><IdCard size={18} color="var(--muted)" /></div>
+          <div className="list">{staffW.map(({ s, a }) => <Link key={s.id} to="/staff" className="item"><div className="grow t">{s.full_name}</div>
+            <div className="chips">{a.map((x) => <span key={x.l} className={'badge ' + (x.level === 'expired' ? 'b-bad' : 'b-warn')}>{x.l}: {x.level === 'expired' ? 'έληξε' : `σε ${x.d} μέρες`}</span>)}</div></Link>)}</div></div>}
+
+        {injured.length > 0 && <div className="card flush"><div className="card-head"><h2>Τραυματίες</h2><Bandage size={18} color="var(--muted)" /></div>
+          <div className="list">{injured.map((i, n) => <Link key={i.id + n} to={`/players/${i.id}`} className="item"><div className="grow t">{i.name}</div><span className="muted">{i.part || ''}{i.ret ? ` · επιστροφή ~${dt(i.ret)}` : ''}</span></Link>)}</div></div>}
+
         <div className="card flush"><div className="card-head"><h2>Επόμενο πρόγραμμα</h2><CalendarDays size={18} color="var(--muted)" /></div>
           {next.length ? <div className="list">{next.map((e) => (
             <Link key={e.id} to="/events" className="item">
@@ -111,14 +123,29 @@ function CoachDashboard() {
   const mine = teams.filter((t) => myTeams.includes(t.id))
   const [players, setPlayers] = useState<Player[]>([])
   const [next, setNext] = useState<EventRow[]>([])
+  const [inj, setInj] = useState<Set<string>>(new Set())
+  const [load, setLoad] = useState<{ p: Player; acwr: number; acute: number }[]>([])
   useEffect(() => {
     (async () => {
-      const [p, e] = await Promise.all([sb.from('players').select('*').eq('active', true).order('last_name'),
-        sb.from('events').select('*').gte('starts_at', new Date(Date.now() - 3 * 3600e3).toISOString()).order('starts_at').limit(8)])
-      setPlayers((p.data || []) as Player[]); setNext((e.data || []) as EventRow[])
+      const [p, e, i, past] = await Promise.all([sb.from('players').select('*').eq('active', true).order('last_name'),
+        sb.from('events').select('*').gte('starts_at', new Date(Date.now() - 3 * 3600e3).toISOString()).order('starts_at').limit(8),
+        openInjuries(),
+        sb.from('events').select('id, starts_at').gte('starts_at', new Date(Date.now() - 28 * 864e5).toISOString()).lte('starts_at', new Date().toISOString())])
+      const pl = (p.data || []) as Player[]
+      setPlayers(pl); setNext((e.data || []) as EventRow[]); setInj(i)
+      const evs = past.data || []
+      if (evs.length) {
+        const when = new Map(evs.map((x) => [x.id, new Date(x.starts_at).getTime()]))
+        const { data: st } = await sb.from('player_stats').select('player_id, event_id, minutes, rpe').in('event_id', evs.map((x) => x.id)).not('rpe', 'is', null)
+        const wk = Date.now() - 7 * 864e5
+        const rows = pl.map((x) => { const mine = (st || []).filter((r) => r.player_id === x.id); const l = (r: { minutes: number | null; rpe: number | null }) => (r.minutes || 0) * (r.rpe || 0)
+          const acute = mine.filter((r) => (when.get(r.event_id) || 0) >= wk).reduce((a, r) => a + l(r), 0); const chronic = mine.reduce((a, r) => a + l(r), 0) / 4
+          return { p: x, acute, acwr: chronic ? acute / chronic : 0 } })
+        setLoad(rows.filter((r) => r.acwr > 1.5 && r.acute > 0).sort((a, z) => z.acwr - a.acwr))
+      }
     })()
   }, [])
-  const blocked = players.filter((p) => !eligibility(p).ok)
+  const blocked = players.filter((p) => !eligibility(p, inj.has(p.id)).ok)
   return <>
     <div className="hero"><img src={settings?.logo_url || BRAND + 'pss-logo.png'} alt="" />
       <div className="grow"><div className="eyebrow" style={{ color: '#ff6b80' }}>Προπονητής</div><h1>Οι ομάδες μου</h1>
@@ -134,9 +161,12 @@ function CoachDashboard() {
           <span className="muted">{new Date(e.starts_at).toLocaleString('el-GR', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</span></Link>)}</div>
           : <Empty title="Κενό πρόγραμμα" text="Δημιούργησε τις προπονήσεις του μήνα από το εβδομαδιαίο πρόγραμμα." />}</div>
       <div className="card flush"><div className="card-head"><h2>Χωρίς δικαίωμα συμμετοχής</h2><Stethoscope size={18} color="var(--muted)" /></div>
-        {blocked.length ? <div className="list">{blocked.map((p) => <Link key={p.id} to={`/players/${p.id}`} className="item"><div className="grow t">{fullName(p)}</div><span className="badge b-bad">{eligibility(p).issues[0]}</span></Link>)}</div>
+        {blocked.length ? <div className="list">{blocked.map((p) => <Link key={p.id} to={`/players/${p.id}`} className="item"><div className="grow t">{fullName(p)}</div><span className="badge b-bad">{eligibility(p, inj.has(p.id)).issues[0]}</span></Link>)}</div>
           : <Empty title="Όλοι μπορούν να παίξουν" text="Ιατρικές βεβαιώσεις και δελτία σε ισχύ." />}</div>
     </div>
+    {load.length > 0 && <div className="card flush" style={{ marginTop: 16 }}><div className="card-head"><h2>Αυξημένος φόρτος προπόνησης</h2><Gauge size={18} color="var(--warn)" /></div>
+      <div className="list">{load.map((r) => <Link key={r.p.id} to={`/players/${r.p.id}`} className="item"><div className="grow t">{fullName(r.p)}</div><span className="badge b-warn">ACWR {r.acwr.toFixed(2)}</span></Link>)}</div>
+      <div className="item muted">Ο φόρτος της τελευταίας εβδομάδας είναι πάνω από 1,5× τον μέσο όρο του μήνα — αυξημένος κίνδυνος τραυματισμού. Σκέψου πιο ελαφριά προπόνηση.</div></div>}
     <div className="card row" style={{ marginTop: 16 }}><Activity size={22} color="var(--red)" /><div className="grow"><b>Μηνιαίες μετρήσεις</b><div className="muted">Καταχώρισε βιομετρικά, τεστ και αξιολογήσεις για τον μήνα.</div></div><Link to="/performance" className="btn red">Επιδόσεις</Link></div>
   </>
 }

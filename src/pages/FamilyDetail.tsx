@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Pencil, Trash2, Phone, Mail, Download, Send, CheckCircle2, Merge, UserPlus, Receipt, ArrowRightLeft, BellOff } from 'lucide-react'
-import { sb, eur, dt, fullName, initials, monthlyAmount, today, METHOD, RELATIONS, type Household, type Guardian, type Charge, type Payment, type Player } from '../lib/supabase'
+import { sb, eur, dt, fullName, initials, monthlyAmount, today, METHOD, RELATIONS, DISCOUNT_CATS, type Household, type Guardian, type Charge, type Payment, type Player } from '../lib/supabase'
 import { statement, receipt, downloadPdf } from '../lib/billing'
 import { useApp, Modal, Empty, StatusBadge } from '../ui'
 
@@ -135,6 +135,9 @@ export default function FamilyDetail() {
             onBlur={(e) => { const v = e.target.value === '' ? null : Number(e.target.value); if (v !== h.monthly_override) updateH({ monthly_override: v }) }} /></label>
           <label className="f">Έκπτωση %<input type="number" step="1" defaultValue={h.discount_pct || 0} key={'d' + h.discount_pct}
             onBlur={(e) => { const v = Number(e.target.value || 0); if (v !== Number(h.discount_pct)) updateH({ discount_pct: v }) }} /></label>
+          <label className="f">Κατηγορία έκπτωσης / υποτροφία<select value={h.discount_category || ''} onChange={(e) => updateH({ discount_category: e.target.value || null })}><option value="">— Καμία —</option>{DISCOUNT_CATS.map((c) => <option key={c}>{c}</option>)}</select></label>
+          <label className="f">Αιτιολογία / δικαιολογητικό<input defaultValue={h.discount_reason || ''} key={'r' + h.discount_reason} placeholder="π.χ. Πάσο πολυτέκνων έως 6/2027"
+            onBlur={(e) => { const v = e.target.value.trim() || null; if (v !== (h.discount_reason || null)) updateH({ discount_reason: v }) }} /></label>
           <div><div className="muted" style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>Τελική χρέωση / μήνα</div><div className="head" style={{ fontSize: 24, fontWeight: 800, color: 'var(--navy)' }}>{eur(monthly)}</div>
             <label className="check" style={{ marginTop: 6 }}><input type="checkbox" checked={h.active} onChange={(e) => updateH({ active: e.target.checked })} />Ενεργός λογαριασμός</label></div>
         </div>

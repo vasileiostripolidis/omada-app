@@ -17,6 +17,7 @@ export type ReportData = {
   defs: MetricDef[]; periods: string[]; values: Record<string, Record<number, number>>; teamAvg: Record<string, Record<number, number>>
   attendance: { present: number; total: number }; matches: { apps: number; goals: number; assists: number }
   comments: { period: string; comment: string }[]
+  goals?: { title: string; theme: string; progress: number; status: string }[]
 }
 
 export async function evaluationPdf(d: ReportData) {
@@ -100,6 +101,21 @@ export async function evaluationPdf(d: ReportData) {
       doc.setLineWidth(0.2)
     })
     y += Math.ceil(charted.length / 3) * 40 + 4
+  }
+  // ατομικοί στόχοι
+  const gl = (d.goals || []).filter((g) => g.status !== 'dropped').slice(0, 6)
+  if (gl.length) {
+    if (y > 230) { doc.addPage(); y = 20 }
+    doc.setFont('LS', 'bold'); doc.setFontSize(11); doc.setTextColor(NAVY); doc.text('ΑΤΟΜΙΚΟΙ ΣΤΟΧΟΙ', 14, y); y += 6
+    for (const g of gl) {
+      doc.setFont('LS', 'normal'); doc.setFontSize(9.5); doc.setTextColor('#111'); doc.text(`${g.title}`, 14, y)
+      doc.setFontSize(8); doc.setTextColor(GREY); doc.text(g.theme + (g.status === 'achieved' ? ' · Επιτεύχθηκε' : ''), 14, y + 4)
+      doc.setFillColor('#e2e7f0'); doc.roundedRect(130, y - 3, 56, 3.5, 1.5, 1.5, 'F')
+      doc.setFillColor(g.progress >= 100 ? '#138a4a' : NAVY); doc.roundedRect(130, y - 3, Math.max(1.5, 56 * g.progress / 100), 3.5, 1.5, 1.5, 'F')
+      doc.setFontSize(8.5); doc.setTextColor('#111'); doc.text(`${g.progress}%`, 196, y, { align: 'right' })
+      y += 10
+    }
+    y += 2
   }
   // σχόλια προπονητή
   const cm = d.comments.filter((c) => c.comment?.trim()).slice(-4)

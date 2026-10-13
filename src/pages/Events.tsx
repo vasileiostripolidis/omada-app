@@ -1,58 +1,86 @@
 import { useEffect, useState } from 'react'
-import { Plus, CalendarPlus, Trash2, ShieldAlert } from 'lucide-react'
-import { sb, fullName, EVTYPE, WEEKDAYS, eligibility, ymd, type EventRow, type Team, type Player, type Stat, type Slot } from '../lib/supabase'
+import { Plus, CalendarPlus, Trash2, ClipboardList, Megaphone, AlertTriangle, ListChecks } from 'lucide-react'
+import { sb, fullName, EVTYPE, WEEKDAYS, fieldConflicts, type EventRow, type Team, type Player, type Stat, type Slot, type Field } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty, TeamChip } from '../ui'
+import Attendance from '../components/Attendance'
+import SessionPlan from '../components/SessionPlan'
+import Urgent from '../components/Urgent'
+import Fields from '../components/Fields'
+import { PlayingTime, Standings } from '../components/MatchCenter'
 
+type View = 'list' | 'week' | 'fields' | 'time' | 'table'
 export default function Events() {
   const { toast, teams: allTeams, myTeams, isCoach } = useApp()
   const teams = isCoach ? allTeams.filter((t) => myTeams.includes(t.id)) : allTeams
   const [events, setEvents] = useState<EventRow[]>([])
+  const [fields, setFields] = useState<Field[]>([])
   const [team, setTeam] = useState('')
-  const [view, setView] = useState<'list' | 'week'>('list')
+  const [view, setView] = useState<View>('list')
   const [when, setWhen] = useState<'up' | 'past'>('up')
-  const [edit, setEdit] = useState<Partial<EventRow> | null>(null)
+  const [edit, setEdit] = useState<(Partial<EventRow> & { dur?: number }) | null>(null)
   const [statsFor, setStatsFor] = useState<EventRow | null>(null)
+  const [planFor, setPlanFor] = useState<EventRow | null>(null)
+  const [urgent, setUrgent] = useState<EventRow | null>(null)
   const [board, setBoard] = useState(false)
+  const [conf, setConf] = useState<EventRow[]>([])
+  const [plans, setPlans] = useState<Set<string>>(new Set())
 
   const load = async () => {
-    const { data } = await sb.from('events').select('*').order('starts_at')
-    setEvents(data || [])
+    const [e, f, d] = await Promise.all([sb.from('events').select('*').order('starts_at'), sb.from('fields').select('*').eq('active', true).order('name'), sb.from('event_drills').select('event_id')])
+    setEvents(e.data || []); setFields(f.data || []); setPlans(new Set((d.data || []).map((x) => x.event_id)))
   }
   useEffect(() => { load() }, [])
 
-  const now = new Date().toISOString()
+  const now = new Date(Date.now() - 3 * 3600e3).toISOString()
   let list = events.filter((e) => (!team || e.team_id === team) && (when === 'up' ? e.starts_at >= now : e.starts_at < now))
   if (when === 'past') list = [...list].reverse()
-  
+  const local = (iso?: string | null) => iso ? new Date(new Date(iso).getTime() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16) : ''
+  const durOf = (e: Partial<EventRow>) => e.end_at && e.starts_at ? Math.round((new Date(e.end_at).getTime() - new Date(e.starts_at).getTime()) / 6e4) : e.type === 'match' ? 90 : 90
+
+  useEffect(() => {
+    if (!edit?.field_id || !edit.starts_at) { setConf([]); return }
+    const s = new Date(edit.starts_at).toISOString(), e = new Date(new Date(edit.starts_at).getTime() + (edit.dur || 90) * 6e4).toISOString()
+    fieldConflicts(edit.field_id, s, e, edit.id).then(setConf)
+  }, [edit?.field_id, edit?.starts_at, edit?.dur])
+
   async function save(ev: React.FormEvent) {
     ev.preventDefault()
-    const { id, ...rest } = edit!
-    const payload = { ...rest, starts_at: new Date(rest.starts_at as string).toISOString() }
+    const { id, dur, ...rest } = edit!
+    const start = new Date(rest.starts_at as string)
+    const fld = fields.find((f) => f.id === rest.field_id)
+    const payload = { ...rest, starts_at: start.toISOString(), end_at: new Date(start.getTime() + (dur || 90) * 6e4).toISOString(), location: rest.location || fld?.name || null }
     const r = id ? await sb.from('events').update(payload).eq('id', id) : await sb.from('events').insert(payload)
     if (r.error) return toast(r.error.message)
     setEdit(null); load(); toast('Αποθηκεύτηκε ✓')
   }
-  const local = (iso?: string) => iso ? new Date(new Date(iso).getTime() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16) : ''
-
+  const V = (k: View, l: string) => <button className={'tab' + (view === k ? ' on' : '')} onClick={() => setView(k)}>{l}</button>
   return (
     <>
-      <PageHead eyebrow="Αγωνιστικά" title="Πρόγραμμα & Παρουσίες" sub="Προπονήσεις, αγώνες και παρουσιολόγιο. Ο προπονητής καταγράφει παρουσίες με ένα πάτημα.">
+      <PageHead eyebrow="Αγωνιστικά" title="Πρόγραμμα & Παρουσίες" sub="Προπονήσεις, αγώνες, παρουσιολόγιο, πλάνα προπόνησης και γήπεδα.">
         <button className="btn ghost" onClick={() => setBoard(true)}>Κορυφαίοι</button>
-        <button className="btn red" onClick={() => setEdit({ type: 'match', home: true, team_id: team || teams[0]?.id })}><Plus size={18} />Νέο</button></PageHead>
-      <div className="tabs"><button className={'tab' + (view === 'list' ? ' on' : '')} onClick={() => setView('list')}>Πρόγραμμα</button><button className={'tab' + (view === 'week' ? ' on' : '')} onClick={() => setView('week')}>Εβδομαδιαίο πρόγραμμα προπονήσεων</button></div>
-      {view === 'week' ? <WeeklySchedule teams={teams} onGenerated={load} /> : <>
+        <button className="btn red" onClick={() => setEdit({ type: 'training', home: true, team_id: team || teams[0]?.id, dur: 90 })}><Plus size={18} />Νέο</button></PageHead>
+      <div className="tabs">{V('list', 'Πρόγραμμα')}{V('week', 'Εβδομαδιαίο πρόγραμμα')}{V('fields', 'Γήπεδα')}{V('time', 'Χρόνος συμμετοχής')}{V('table', 'Βαθμολογία')}</div>
+      {view === 'week' && <WeeklySchedule teams={teams} fields={fields} onGenerated={load} />}
+      {view === 'fields' && <Fields teams={allTeams} />}
+      {view === 'time' && <PlayingTime teams={teams} />}
+      {view === 'table' && <Standings teams={teams} />}
+      {view === 'list' && <>
       <div className="row" style={{ marginBottom: 12 }}>
         <div className="pills"><button className={'pill' + (when === 'up' ? ' on' : '')} onClick={() => setWhen('up')}>Επόμενα</button><button className={'pill' + (when === 'past' ? ' on' : '')} onClick={() => setWhen('past')}>Προηγούμενα</button></div>
         <select value={team} onChange={(e) => setTeam(e.target.value)} style={{ width: 'auto' }}><option value="">Όλες οι ομάδες</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
       </div>
       <div className="card flush">
         {list.length ? <div className="list">{list.map((e) => (
-          <div className="item" key={e.id}>
+          <div className="item" key={e.id} style={{ flexWrap: 'wrap' }}>
             <div style={{ textAlign: 'center', width: 52 }}><b className="head" style={{ fontSize: 24 }}>{new Date(e.starts_at).getDate()}</b><div className="muted">{new Date(e.starts_at).toLocaleDateString('el-GR', { month: 'short' })}</div></div>
-            <div className="grow" style={{ cursor: 'pointer' }} onClick={() => setEdit({ ...e, starts_at: local(e.starts_at) })}>
+            <div className="grow" style={{ cursor: 'pointer', minWidth: 200 }} onClick={() => setEdit({ ...e, starts_at: local(e.starts_at), dur: durOf(e) })}>
               <b>{EVTYPE[e.type]}{e.opponent ? ` vs ${e.opponent}` : ''}</b> {e.score_for != null && <span className="badge">{e.score_for}-{e.score_against}</span>}
-              <div className="muted"><TeamChip team={teams.find((t) => t.id === e.team_id)} /> · {new Date(e.starts_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })} · {e.location || ''} {e.type === 'match' ? (e.home ? '(εντός)' : '(εκτός)') : ''}</div></div>
-            <button className={'btn sm ' + (e.type === 'match' ? 'ghost' : '')} onClick={() => setStatsFor(e)}>{e.type === 'match' ? 'Στατιστικά' : 'Παρουσιολόγιο'}</button>
+              <div className="muted"><TeamChip team={teams.find((t) => t.id === e.team_id)} /> · {new Date(e.starts_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })}{e.end_at ? `–${new Date(e.end_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })}` : ''} · {fields.find((f) => f.id === e.field_id)?.name || e.location || ''} {e.type === 'match' ? (e.home ? '(εντός)' : '(εκτός)') : ''}</div>
+              {e.objective && <div className="muted">Στόχος: {e.objective}</div>}</div>
+            <div className="row">
+              {e.type !== 'match' && <button className={'btn ghost sm'} onClick={() => setPlanFor(e)}><ListChecks size={14} />{plans.has(e.id) ? 'Πλάνο ✓' : 'Πλάνο'}</button>}
+              <button className="iconbtn" title="Επείγουσα ειδοποίηση" onClick={() => setUrgent(e)}><Megaphone size={15} /></button>
+              <button className={'btn sm ' + (e.type === 'match' ? 'ghost' : '')} onClick={() => setStatsFor(e)}><ClipboardList size={14} />{e.type === 'match' ? 'Φύλλο αγώνα' : 'Παρουσίες'}</button></div>
           </div>))}</div> : <Empty title="Τίποτα εδώ ακόμα" text="Πρόσθεσε αγώνα ή προπόνηση, ή δημιούργησε τις προπονήσεις του μήνα από το εβδομαδιαίο πρόγραμμα." />}
       </div></>}
 
@@ -61,54 +89,28 @@ export default function Events() {
           <label className="f">Τύπος<select value={edit.type} onChange={(e) => setEdit({ ...edit, type: e.target.value })}>{Object.entries(EVTYPE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
           <label className="f">Ομάδα<select required value={edit.team_id || ''} onChange={(e) => setEdit({ ...edit, team_id: e.target.value })}><option value="">—</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
           <label className="f">Ημ/νία & ώρα<input type="datetime-local" required value={edit.starts_at || ''} onChange={(e) => setEdit({ ...edit, starts_at: e.target.value })} /></label>
-          <label className="f">Γήπεδο<input value={edit.location || ''} onChange={(e) => setEdit({ ...edit, location: e.target.value })} /></label>
+          <label className="f">Διάρκεια (λεπτά)<input type="number" value={edit.dur ?? 90} onChange={(e) => setEdit({ ...edit, dur: +e.target.value })} /></label>
+          <label className="f">Γήπεδο<select value={edit.field_id || ''} onChange={(e) => setEdit({ ...edit, field_id: e.target.value || null })}><option value="">— άλλο / εκτός —</option>{fields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+          {!edit.field_id && <label className="f">Τοποθεσία<input value={edit.location || ''} onChange={(e) => setEdit({ ...edit, location: e.target.value })} /></label>}
           {edit.type === 'match' && <>
             <label className="f">Αντίπαλος<input value={edit.opponent || ''} onChange={(e) => setEdit({ ...edit, opponent: e.target.value })} /></label>
             <label className="f">Έδρα<select value={edit.home ? '1' : '0'} onChange={(e) => setEdit({ ...edit, home: e.target.value === '1' })}><option value="1">Εντός</option><option value="0">Εκτός</option></select></label>
             <label className="f">Γκολ μας<input type="number" value={edit.score_for ?? ''} onChange={(e) => setEdit({ ...edit, score_for: e.target.value === '' ? null : +e.target.value })} /></label>
             <label className="f">Γκολ αντιπάλου<input type="number" value={edit.score_against ?? ''} onChange={(e) => setEdit({ ...edit, score_against: e.target.value === '' ? null : +e.target.value })} /></label>
           </>}
+          {edit.type !== 'match' && <label className="f full">Στόχος προπόνησης<input value={edit.objective || ''} onChange={(e) => setEdit({ ...edit, objective: e.target.value })} /></label>}
+          <label className="f full">Σημειώσεις<textarea rows={2} value={edit.notes || ''} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></label>
         </div>
-          <label style={{ marginTop: 12 }}>Σημειώσεις<textarea rows={2} value={edit.notes || ''} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></label>
-          <div className="row" style={{ marginTop: 14 }}><button className="btn grow" style={{ justifyContent: 'center' }}>Αποθήκευση</button>
+          {conf.length > 0 && <div className="note warn row" style={{ marginTop: 12 }}><AlertTriangle size={16} />Το γήπεδο είναι ήδη πιασμένο: {conf.map((c) => `${allTeams.find((t) => t.id === c.team_id)?.name || ''} ${new Date(c.starts_at).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })}`).join(', ')}</div>}
+          <div className="row" style={{ marginTop: 14 }}><button className="btn red grow">Αποθήκευση</button>
             {edit.id && <button type="button" className="btn danger" onClick={async () => { if (confirm('Διαγραφή;')) { await sb.from('events').delete().eq('id', edit.id); setEdit(null); load() } }}>Διαγραφή</button>}</div>
         </form></Modal>}
-      {statsFor && <StatsModal ev={statsFor} onClose={() => setStatsFor(null)} />}
+      {statsFor && <Attendance ev={statsFor} onClose={() => setStatsFor(null)} />}
+      {planFor && <SessionPlan ev={planFor} teamName={allTeams.find((t) => t.id === planFor.team_id)?.name || ''} onClose={() => { setPlanFor(null); load() }} />}
+      {urgent && <Urgent ev={urgent} teamId={urgent.team_id || ''} teamName={allTeams.find((t) => t.id === urgent.team_id)?.name || ''} onClose={() => setUrgent(null)} />}
       {board && <Leaders teams={teams} onClose={() => setBoard(false)} />}
     </>
   )
-}
-
-function StatsModal({ ev, onClose }: { ev: EventRow; onClose: () => void }) {
-  const { toast } = useApp()
-  const [players, setPlayers] = useState<Player[]>([])
-  const [rows, setRows] = useState<Record<string, Stat>>({})
-  const match = ev.type === 'match'
-  useEffect(() => {
-    (async () => {
-      const [p, s] = await Promise.all([sb.from('players').select('*').eq('team_id', ev.team_id).eq('active', true).order('last_name'), sb.from('player_stats').select('*').eq('event_id', ev.id)])
-      setPlayers(p.data || [])
-      const ex = Object.fromEntries((s.data || []).map((x) => [x.player_id, x]))
-      setRows(Object.fromEntries((p.data || []).map((pl) => [pl.id, ex[pl.id] || { event_id: ev.id, player_id: pl.id, present: !ex.length, minutes: 0, goals: 0, assists: 0, yellow: 0, red: 0, rating: null }])))
-    })()
-  }, [ev])
-  const upd = (pid: string, k: keyof Stat, v: number | boolean) => setRows({ ...rows, [pid]: { ...rows[pid], [k]: v } })
-  async function save() {
-    const r = await sb.from('player_stats').upsert(Object.values(rows))
-    if (r.error) return toast(r.error.message)
-    toast('Αποθηκεύτηκε ✓'); onClose()
-  }
-  const N = (pid: string, k: keyof Stat) => <td><input className="num" type="number" min={0} value={Number(rows[pid]?.[k] ?? 0)} onChange={(e) => upd(pid, k, +e.target.value)} /></td>
-  return <Modal title={`${EVTYPE[ev.type]} ${ev.opponent ? 'vs ' + ev.opponent : ''} – ${new Date(ev.starts_at).toLocaleDateString('el-GR')}`} onClose={onClose}>
-    <div className="scroll"><table><thead><tr><th>Παίκτης</th><th>Παρών</th>{match && <><th>Λεπτά</th><th>Γκολ</th><th>Ασίστ</th><th>🟨</th><th>🟥</th></>}</tr></thead><tbody>
-      {players.map((p) => { const el = eligibility(p); return <tr key={p.id}><td>{fullName(p)}{!el.ok && <div><span className="badge b-bad"><ShieldAlert size={11} />{el.issues[0]}</span></div>}</td><td><input type="checkbox" style={{ width: 22, height: 22 }} checked={!!rows[p.id]?.present} onChange={(e) => upd(p.id, 'present', e.target.checked)} /></td>
-        {match && <>{N(p.id, 'minutes')}{N(p.id, 'goals')}{N(p.id, 'assists')}{N(p.id, 'yellow')}{N(p.id, 'red')}</>}</tr> })}
-    </tbody></table></div>
-    {!players.length && <div className="empty">Η ομάδα δεν έχει παίκτες</div>}
-    <div className="row" style={{ marginTop: 12 }}><span className="muted grow">Παρόντες: <b>{Object.values(rows).filter((r) => r.present).length}</b> / {players.length}</span>
-      <button className="btn ghost sm" onClick={() => setRows(Object.fromEntries(Object.entries(rows).map(([k, r]) => [k, { ...r, present: true }])))}>Όλοι παρόντες</button>
-      <button className="btn red" onClick={save}>Αποθήκευση</button></div>
-  </Modal>
 }
 
 function Leaders({ teams, onClose }: { teams: Team[]; onClose: () => void }) {
@@ -137,10 +139,10 @@ function Leaders({ teams, onClose }: { teams: Team[]; onClose: () => void }) {
   </Modal>
 }
 
-function WeeklySchedule({ teams, onGenerated }: { teams: Team[]; onGenerated: () => void }) {
+function WeeklySchedule({ teams, fields, onGenerated }: { teams: Team[]; fields: Field[]; onGenerated: () => void }) {
   const { toast } = useApp()
   const [slots, setSlots] = useState<Slot[]>([])
-  const [n, setN] = useState({ team_id: '', weekday: 2, start_time: '18:00', end_time: '19:30', location: '' })
+  const [n, setN] = useState({ team_id: '', weekday: 2, start_time: '18:00', end_time: '19:30', location: '', field_id: '' })
   const [month, setMonth] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() + (d.getDate() > 20 ? 1 : 0)); return d.toISOString().slice(0, 7) })
   const [busy, setBusy] = useState(false)
   const load = () => sb.from('training_slots').select('*').order('weekday').order('start_time').then(({ data }) => setSlots(data || []))
@@ -148,7 +150,9 @@ function WeeklySchedule({ teams, onGenerated }: { teams: Team[]; onGenerated: ()
   useEffect(() => { if (!n.team_id && teams.length) setN((x) => ({ ...x, team_id: teams[0].id })) }, [teams.length])
   async function add() {
     if (!n.team_id) return
-    const r = await sb.from('training_slots').insert({ ...n, location: n.location || null }); if (r.error) return toast(r.error.message)
+    const clash = slots.find((x) => n.field_id && x.field_id === n.field_id && x.weekday === n.weekday && n.start_time < (x.end_time || '23:59') && n.end_time > x.start_time)
+    if (clash && !confirm(`Το γήπεδο είναι πιασμένο ${WEEKDAYS[clash.weekday]} ${clash.start_time.slice(0, 5)} από ${teams.find((t) => t.id === clash.team_id)?.name || 'άλλη ομάδα'}. Προσθήκη παρ' όλα αυτά;`)) return
+    const r = await sb.from('training_slots').insert({ ...n, location: n.location || fields.find((f) => f.id === n.field_id)?.name || null, field_id: n.field_id || null }); if (r.error) return toast(r.error.message)
     toast('Προστέθηκε ✓'); load()
   }
   async function del(s: Slot) { await sb.from('training_slots').delete().eq('id', s.id); load() }
@@ -166,7 +170,9 @@ function WeeklySchedule({ teams, onGenerated }: { teams: Team[]; onGenerated: ()
         const [hh, mm] = s.start_time.split(':').map(Number)
         const start = new Date(y, m - 1, d, hh, mm)
         if (have.has(s.team_id + '|' + start.getTime())) continue
-        rows.push({ team_id: s.team_id, type: 'training', starts_at: start.toISOString(), location: s.location, home: true, notes: s.end_time ? `Έως ${s.end_time.slice(0, 5)}` : null })
+        const [eh, em] = (s.end_time || '').split(':').map(Number)
+        const end = s.end_time ? new Date(y, m - 1, d, eh, em) : new Date(start.getTime() + 90 * 6e4)
+        rows.push({ team_id: s.team_id, type: 'training', starts_at: start.toISOString(), end_at: end.toISOString(), location: s.location, field_id: s.field_id || null, home: true })
       }
     }
     if (rows.length) { const r = await sb.from('events').insert(rows); if (r.error) { setBusy(false); return toast(r.error.message) } }
@@ -185,12 +191,11 @@ function WeeklySchedule({ teams, onGenerated }: { teams: Team[]; onGenerated: ()
       <label className="f">Ημέρα<select value={n.weekday} onChange={(e) => setN({ ...n, weekday: Number(e.target.value) })}>{WEEKDAYS.slice(1).map((w, i) => <option key={w} value={i + 1}>{w}</option>)}</select></label>
       <label className="f">Έναρξη<input type="time" value={n.start_time} onChange={(e) => setN({ ...n, start_time: e.target.value })} /></label>
       <label className="f">Λήξη<input type="time" value={n.end_time} onChange={(e) => setN({ ...n, end_time: e.target.value })} /></label>
-      <label className="f">Γήπεδο<input value={n.location} onChange={(e) => setN({ ...n, location: e.target.value })} /></label>
+      <label className="f">Γήπεδο<select value={n.field_id} onChange={(e) => setN({ ...n, field_id: e.target.value })}><option value="">—</option>{fields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+      {!n.field_id && <label className="f">Τοποθεσία<input value={n.location} onChange={(e) => setN({ ...n, location: e.target.value })} /></label>}
     </div><button className="btn red" style={{ marginTop: 12 }} onClick={add}><Plus size={16} />Προσθήκη</button></div>
     <div className="card row"><div className="grow"><h2 style={{ margin: 0 }}>Προπονήσεις μήνα</h2><div className="muted">Δημιουργεί όλες τις προπονήσεις του μήνα στο πρόγραμμα, βάσει του εβδομαδιαίου προγράμματος.</div></div>
       <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: 170 }} />
       <button className="btn" disabled={busy || !slots.length} onClick={generate}><CalendarPlus size={16} />{busy ? '…' : 'Δημιουργία'}</button></div>
   </div>
 }
-// ymd διατηρείται για μελλοντική χρήση στο ημερολόγιο
-void ymd

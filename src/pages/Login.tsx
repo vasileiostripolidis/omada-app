@@ -40,6 +40,7 @@ export default function Login() {
           <button type="button" className="btn ghost sm" onClick={() => setMode(mode === 'in' ? 'up' : 'in')}>{mode === 'in' ? 'Δημιουργία λογαριασμού' : 'Έχω λογαριασμό'}</button>
           {mode === 'in' && <button type="button" className="btn ghost sm" onClick={() => setMode('reset')}>Ξέχασα τον κωδικό</button>}
         </div>
+        <div className="muted" style={{ textAlign: 'center', fontSize: 12.5 }}><a href="#/register">Ηλεκτρονική εγγραφή αθλητή</a> · <a href="#/privacy">Πολιτική απορρήτου</a> · <a href="#/terms">Όροι</a></div>
       </form>
     </div>
   )

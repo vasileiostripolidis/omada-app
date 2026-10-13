@@ -3,8 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Pencil, Upload, FileText, Trash2, Phone, Mail, Link2, Unlink, Camera, HeartHandshake, FileDown, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { sb, eur, dt, age, fullName, initials, isAdult, signedUrl, today, eligibility, CATEGORIES, CONSENTS, MONTHS, DOC_TYPES, type Player, type Household, type Guardian, type MetricDef } from '../lib/supabase'
 import LineChart from '../components/LineChart'
+import PlayerGoals from '../components/PlayerGoals'
+import PlayerHealth from '../components/PlayerHealth'
 import { useApp, Modal, TeamChip, Empty } from '../ui'
 import { PlayerForm } from './Players'
+import { exportPlayerData } from '../components/Admin'
 
 type FileRow = { id: string; name: string; path: string; mime: string | null; size: number | null; kind: string; doc_type: string | null; uploaded_at: string }
 type LinkRow = { household_id: string; share_pct: number; households: Household }
@@ -30,8 +33,13 @@ export default function PlayerDetail() {
   const [mv, setMv] = useState<Record<string, Record<number, number>>>({})
   const [tavg, setTavg] = useState<Record<string, Record<number, number>>>({})
   const [evals, setEvals] = useState<{ period: string; comment: string }[]>([])
+  const [consEdit, setConsEdit] = useState<Record<string, boolean> | null>(null)
+  const [consBy, setConsBy] = useState('')
   const [consents, setConsents] = useState<{ kind: string; granted: boolean; signed_by: string | null; signed_at: string }[]>([])
   const [pcat, setPcat] = useState('body')
+  const [injured, setInjured] = useState(false)
+  const checkInj = () => sb.from('injuries').select('id').eq('player_id', id).is('returned_at', null).then(({ data }) => setInjured(!!data?.length))
+  useEffect(() => { checkInj() }, [id])
 
   const load = async () => {
     const [a, f, l, s] = await Promise.all([
@@ -79,7 +87,8 @@ export default function PlayerDetail() {
     const { data: st } = await sb.from('player_stats').select('*, events(type)').eq('player_id', id)
     const rows = (st || []) as { present: boolean; goals: number; assists: number; events: { type: string } }[]
     const m = rows.filter((r) => r.events?.type === 'match' && r.present)
-    await evaluationPdf({ player: p!, teamName: teams.find((x) => x.id === p!.team_id)?.name || '', age: age(p!.birth_date), settings, defs, periods: periods.filter((x) => mv[x]), values: mv, teamAvg: tavg,
+    const { data: goals } = await sb.from('player_goals').select('title, theme, progress, status').eq('player_id', id)
+    await evaluationPdf({ goals: goals || [], player: p!, teamName: teams.find((x) => x.id === p!.team_id)?.name || '', age: age(p!.birth_date), settings, defs, periods: periods.filter((x) => mv[x]), values: mv, teamAvg: tavg,
       attendance: { present: rows.filter((r) => r.present).length, total: rows.length }, matches: { apps: m.length, goals: m.reduce((a2, r) => a2 + (r.goals || 0), 0), assists: m.reduce((a2, r) => a2 + (r.assists || 0), 0) }, comments: evals })
   }
   useEffect(() => { load() }, [id])
@@ -112,6 +121,26 @@ export default function PlayerDetail() {
     await sb.from('player_households').insert({ player_id: id, household_id: h.data.id, share_pct: 100 })
     toast('Δημιουργήθηκε λογαριασμός στο όνομα του αθλητή ✓'); load()
   }
+  async function saveConsents() {
+    if (!consEdit) return
+    if (!consBy.trim()) return toast('Γράψε ποιος γονέας δίνει/ανακαλεί τη συγκατάθεση')
+    const changed = CONSENTS.filter((c) => { const x = consents.find((y) => y.kind === c.key); return !x || x.granted !== !!consEdit[c.key] })
+    if (!changed.length) { setConsEdit(null); return }
+    const r = await sb.from('consents').insert(changed.map((c) => ({ player_id: id, kind: c.key, granted: !!consEdit[c.key], signed_by: consBy.trim(), source: 'office' })))
+    if (r.error) return toast(r.error.message)
+    setConsEdit(null); toast('Οι συγκαταθέσεις ενημερώθηκαν ✓'); load()
+  }
+  async function gdprExport() { try { await exportPlayerData(id!, `${p!.last_name}_${p!.first_name}`) } catch (e) { toast((e as Error).message) } }
+  async function anonymize() {
+    if (!confirm('Ανωνυμοποίηση: διαγράφονται ονοματεπώνυμο, ΑΜΚΑ, στοιχεία επικοινωνίας, σημειώσεις υγείας και όλα τα έγγραφα. Τα στατιστικά και τα οικονομικά μένουν ανώνυμα για το ιστορικό. Δεν αναιρείται. Συνέχεια;')) return
+    const fl = await sb.from('player_files').select('id, path').eq('player_id', id)
+    if (fl.data?.length) { await sb.storage.from('player-files').remove(fl.data.map((f) => f.path)); await sb.from('player_files').delete().eq('player_id', id) }
+    const code = id!.slice(0, 6).toUpperCase()
+    const r = await sb.from('players').update({ first_name: 'Ανώνυμος', last_name: 'Αθλητής ' + code, amka: null, address: null, phone: null, email: null, medical_notes: null, notes: null, photo_path: null, card_number: null,
+      guardian_name: null, guardian_email: null, guardian_phone: null, guardian2_name: null, guardian2_phone: null, birth_date: p!.birth_date ? p!.birth_date.slice(0, 4) + '-01-01' : null, active: false }).eq('id', id)
+    if (r.error) return toast(r.error.message)
+    toast('Ο αθλητής ανωνυμοποιήθηκε'); load()
+  }
   async function remove() { if (confirm('Οριστική διαγραφή αθλητή και όλων των εγγράφων του;')) { await sb.from('players').delete().eq('id', id); nav('/players') } }
 
   const docBadge = (k: string, label: string, exp: string | null) => {
@@ -137,13 +166,13 @@ export default function PlayerDetail() {
             {age(p.birth_date) != null && <span className="badge">{age(p.birth_date)} ετών</span>}
             {isAdult(p) && <span className="badge b-info">Ενήλικας</span>}
             {!p.active && <span className="badge">Ανενεργός</span>}
-            {(() => { const e = eligibility(p); return e.ok ? <span className="badge b-ok"><ShieldCheck size={12} />Δικαίωμα συμμετοχής</span> : <span className="badge b-bad" title={e.issues.join(', ')}><ShieldAlert size={12} />{e.issues[0]}</span> })()}</div>
+            {(() => { const e = eligibility(p, injured); return e.ok ? <span className="badge b-ok"><ShieldCheck size={12} />Δικαίωμα συμμετοχής</span> : <span className="badge b-bad" title={e.issues.join(', ')}><ShieldAlert size={12} />{e.issues[0]}</span> })()}</div>
         </div>
         <div className="row"><button className="btn ghost" onClick={report}><FileDown size={16} />PDF αξιολόγησης</button>
         <button className="btn" onClick={() => setEditing(true)}><Pencil size={16} />Επεξεργασία</button></div>
       </div>
 
-      <div className="tabs">{[['info', 'Στοιχεία'], ['perf', 'Επιδόσεις'], ['family', isOffice ? `Γονείς & Πληρωμές (${links.length})` : 'Επαφές γονέων'], ['docs', `Έγγραφα (${files.length})`], ['stats', 'Αγωνιστικά']].map(([k, l]) =>
+      <div className="tabs">{[['info', 'Στοιχεία'], ['goals', 'Στόχοι'], ['perf', 'Επιδόσεις'], ['health', `Υγεία & φόρτος${injured ? ' ⚠' : ''}`], ['family', isOffice ? `Γονείς & Πληρωμές (${links.length})` : 'Επαφές γονέων'], ['docs', `Έγγραφα (${files.length})`], ['stats', 'Αγωνιστικά']].map(([k, l]) =>
         <button key={k} className={'tab' + (tab === k ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>)}</div>
 
       {tab === 'info' && <div className="stack">
@@ -157,11 +186,23 @@ export default function PlayerDetail() {
           {consents.length ? <div className="list">{CONSENTS.map((c) => { const x = consents.find((y) => y.kind === c.key)
             return <div className="item" key={c.key} style={{ padding: '10px 0' }}><span className={'badge ' + (x?.granted ? 'b-ok' : x ? 'b-bad' : 'b-warn')}>{x?.granted ? 'Ναι' : x ? 'Όχι' : 'Εκκρεμεί'}</span><div className="grow" style={{ fontSize: 13.5 }}>{c.label}</div>{x && <span className="muted">{x.signed_by} · {dt(x.signed_at)}</span>}</div> })}</div>
             : <div className="note warn">Δεν έχουν καταγραφεί συγκαταθέσεις. Στείλε στον γονέα τη φόρμα ηλεκτρονικής εγγραφής ή κατέγραψέ τες από την ενότητα «Εγγραφές».</div>}
+          {isOffice && <div className="row" style={{ marginTop: 10 }}>
+            <button className="btn ghost sm" onClick={() => { setConsBy(''); setConsEdit(Object.fromEntries(CONSENTS.map((c) => [c.key, !!consents.find((y) => y.kind === c.key)?.granted]))) }}><Pencil size={14} />Καταγραφή / ανάκληση</button>
+            <button className="btn ghost sm" onClick={gdprExport}><FileDown size={14} />Εξαγωγή δεδομένων (GDPR)</button>
+            <button className="btn ghost sm" onClick={anonymize}>Ανωνυμοποίηση</button></div>}
         </div>
         {isOffice && <div className="row"><button className="btn ghost sm" onClick={async () => { await sb.from('players').update({ active: !p.active }).eq('id', id); load() }}>{p.active ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}</button>
           <button className="btn danger sm" onClick={remove}><Trash2 size={15} />Διαγραφή αθλητή</button></div>}
       </div>}
 
+      {consEdit && <Modal title="Συγκαταθέσεις GDPR" onClose={() => setConsEdit(null)} foot={<><button className="btn ghost" onClick={() => setConsEdit(null)}>Άκυρο</button><button className="btn red" onClick={saveConsents}>Αποθήκευση</button></>}>
+        <div className="stack">
+          <div className="note">Κάθε αλλαγή καταγράφεται με ημερομηνία και όνομα — το ιστορικό δεν σβήνεται (απαίτηση GDPR).</div>
+          {CONSENTS.map((c) => <label key={c.key} className="check" style={{ alignItems: 'flex-start', padding: 10, borderRadius: 10, background: 'var(--soft)' }}><input type="checkbox" checked={!!consEdit[c.key]} onChange={(e) => setConsEdit({ ...consEdit, [c.key]: e.target.checked })} style={{ marginTop: 2 }} /><span>{c.label}</span></label>)}
+          <label className="f">Γονέας που δίνει / ανακαλεί *<input value={consBy} onChange={(e) => setConsBy(e.target.value)} placeholder="Ονοματεπώνυμο" /></label>
+        </div></Modal>}
+      {tab === 'goals' && <PlayerGoals playerId={p.id} />}
+      {tab === 'health' && <PlayerHealth playerId={p.id} onChange={checkInj} />}
       {tab === 'perf' && <div className="stack">
         {!consents.find((c) => c.kind === 'biometrics' && c.granted) && <div className="note warn">Δεν υπάρχει καταγεγραμμένη συγκατάθεση γονέα για βιομετρικά/επιδόσεις.</div>}
         <div className="pills">{Object.entries(CATEGORIES).map(([k, l]) => <button key={k} className={'pill' + (pcat === k ? ' on' : '')} onClick={() => setPcat(k)}>{l}</button>)}</div>

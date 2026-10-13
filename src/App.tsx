@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, HeartHandshake, Shield, Wallet, CalendarDays, Award, Settings as Cog, LogOut, Menu, Activity, ClipboardList, Package } from 'lucide-react'
+import { LayoutDashboard, Users, HeartHandshake, Shield, Wallet, CalendarDays, Award, Settings as Cog, LogOut, Menu, Activity, ClipboardList, Package, BookOpen, IdCard, Megaphone, CloudOff } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { sb, BRAND, ROLES, type Settings, type Team } from './lib/supabase'
 import { AppCtx, Modal } from './ui'
@@ -20,6 +20,12 @@ import Equipment from './pages/Equipment'
 import Sponsors from './pages/Sponsors'
 import SettingsPage from './pages/Settings'
 import ParentApp from './pages/ParentApp'
+import Drills from './pages/Drills'
+import StaffPage from './pages/Staff'
+import News from './pages/News'
+import Privacy from './pages/Privacy'
+import MfaGate from './components/MfaGate'
+import { syncPending, pendingCount } from './lib/offline'
 
 type NavItem = { sec?: string; to: string; icon: typeof Users; label: string; short: string; roles: string[]; badge?: number }
 const OFFICE = ['admin', 'secretary'], ALL = ['admin', 'secretary', 'coach']
@@ -31,26 +37,31 @@ const NAV: NavItem[] = [
   { to: '/teams', icon: Shield, label: 'Ομάδες', short: 'Ομάδες', roles: ALL },
   { sec: 'Αγωνιστικά', to: '/events', icon: CalendarDays, label: 'Πρόγραμμα & Παρουσίες', short: 'Πρόγραμμα', roles: ALL },
   { to: '/performance', icon: Activity, label: 'Επιδόσεις & Βιομετρικά', short: 'Επιδόσεις', roles: ALL },
+  { to: '/drills', icon: BookOpen, label: 'Βιβλιοθήκη ασκήσεων', short: 'Ασκήσεις', roles: ALL },
+  { to: '/news', icon: Megaphone, label: 'Ανακοινώσεις & Φωτογραφίες', short: 'Ανακοινώσεις', roles: ALL },
   { sec: 'Οικονομικά', to: '/finance', icon: Wallet, label: 'Πληρωμές & Χρεώσεις', short: 'Ταμείο', roles: OFFICE },
   { to: '/sponsors', icon: Award, label: 'Χορηγοί', short: 'Χορηγοί', roles: OFFICE },
   { to: '/equipment', icon: Package, label: 'Αποθήκη εξοπλισμού', short: 'Αποθήκη', roles: OFFICE },
-  { sec: 'Διαχείριση', to: '/settings', icon: Cog, label: 'Ρυθμίσεις', short: 'Ρυθμίσεις', roles: OFFICE },
+  { sec: 'Διαχείριση', to: '/staff', icon: IdCard, label: 'Προπονητές & Προσωπικό', short: 'Προσωπικό', roles: OFFICE },
+  { to: '/settings', icon: Cog, label: 'Ρυθμίσεις', short: 'Ρυθμίσεις', roles: OFFICE },
 ]
+
+const isPublic = () => /^#\/(register|privacy|terms)/.test(window.location.hash)
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
-  const [isReg, setIsReg] = useState(window.location.hash.startsWith('#/register'))
-  useEffect(() => { const f = () => setIsReg(window.location.hash.startsWith('#/register')); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
+  const [isReg, setIsReg] = useState(isPublic())
+  useEffect(() => { const f = () => setIsReg(isPublic()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => setSession(data.session))
     const { data } = sb.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => data.subscription.unsubscribe()
   }, [])
   // Δημόσια φόρμα εγγραφής (χωρίς σύνδεση)
-  if (isReg) return <Register />
+  if (isReg) return window.location.hash.startsWith('#/register') ? <Register /> : <Privacy />
   if (session === undefined) return null
   if (!session) return <Login />
-  return <Shell email={session.user.email || ''} uid={session.user.id} />
+  return <MfaGate><Shell email={session.user.email || ''} uid={session.user.id} /></MfaGate>
 }
 
 function Shell({ email, uid }: { email: string; uid: string }) {
@@ -92,6 +103,13 @@ function Layout({ email, role }: { email: string; role: string }) {
   const [more, setMore] = useState(false)
   const [newRegs, setNewRegs] = useState(0)
   const loc = useLocation()
+  const [pending, setPending] = useState(pendingCount())
+  useEffect(() => {
+    const run = () => syncPending().finally(() => setPending(pendingCount()))
+    const upd = () => setPending(pendingCount())
+    run(); window.addEventListener('online', run); window.addEventListener('pss-pending', upd)
+    return () => { window.removeEventListener('online', run); window.removeEventListener('pss-pending', upd) }
+  }, [])
   useEffect(() => { window.scrollTo(0, 0); setMore(false) }, [loc.pathname])
   useEffect(() => { if (OFFICE.includes(role)) sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'new').then(({ count }) => setNewRegs(count || 0)) }, [role, loc.pathname])
   const nav = NAV.filter((n) => n.roles.includes(role)).map((n) => n.to === '/registrations' ? { ...n, badge: newRegs } : n)
@@ -110,6 +128,7 @@ function Layout({ email, role }: { email: string; role: string }) {
       </aside>
       <header className="topbar"><img src={BRAND + 'pss-logo.png'} alt="" /><div className="t1 grow">Patras Schools Soccer</div><span className="badge">{ROLES[role]}</span></header>
       <main>
+        {pending > 0 && <div className="note warn row" style={{ marginBottom: 12 }}><CloudOff size={16} /><span className="grow">{pending} παρουσιολόγια αποθηκεύτηκαν χωρίς σύνδεση και θα σταλούν μόλις επανέλθει το ίντερνετ.</span><button className="btn ghost sm" onClick={() => syncPending().finally(() => setPending(pendingCount()))}>Αποστολή τώρα</button></div>}
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/players" element={<Players />} />
@@ -117,6 +136,8 @@ function Layout({ email, role }: { email: string; role: string }) {
           <Route path="/teams" element={<Teams />} />
           <Route path="/events" element={<Events />} />
           <Route path="/performance" element={<Performance />} />
+          <Route path="/drills" element={<Drills />} />
+          <Route path="/news" element={<News />} />
           {OFFICE.includes(role) && <>
             <Route path="/families" element={<Families />} />
             <Route path="/families/:id" element={<FamilyDetail />} />
@@ -124,6 +145,7 @@ function Layout({ email, role }: { email: string; role: string }) {
             <Route path="/finance" element={<Finance />} />
             <Route path="/sponsors" element={<Sponsors />} />
             <Route path="/equipment" element={<Equipment />} />
+            <Route path="/staff" element={<StaffPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </>}
         </Routes>

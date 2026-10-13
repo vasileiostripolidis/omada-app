@@ -68,7 +68,7 @@ export default function Finance() {
             {settings?.auto_receipts ? '✓ Απόδειξη με κάθε πληρωμή' : '✗ Αποδείξεις χειροκίνητα'}</div></div>
       </div>
 
-      <div className="tabs">{[['debts', `Οφειλές (${hh.filter((x) => x.balance > 0.004).length})`], ['charges', 'Χρεώσεις'], ['payments', 'Πληρωμές'], ['setup', 'Παραμετροποίηση χρεώσεων']].map(([k, l]) =>
+      <div className="tabs">{[['debts', `Οφειλές (${hh.filter((x) => x.balance > 0.004).length})`], ['charges', 'Χρεώσεις'], ['payments', 'Πληρωμές'], ['discounts', 'Εκπτώσεις & υποτροφίες'], ['setup', 'Παραμετροποίηση χρεώσεων']].map(([k, l]) =>
         <button key={k} className={'tab' + (tab === k ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>)}</div>
       {tab === 'setup' ? <BillingSetup /> : <div className="search" style={{ marginBottom: 12, maxWidth: 420 }}><Search size={17} /><input placeholder="Αναζήτηση οικογένειας…" value={q} onChange={(e) => setQ(e.target.value)} /></div>}
 
@@ -95,6 +95,16 @@ export default function Finance() {
             <td>{p.guardians ? `${p.guardians.first_name} ${p.guardians.last_name}` : '—'}</td><td>{METHOD[p.method]}</td><td className="r num"><b>{eur(p.amount)}</b></td></tr>)}
         </tbody></table></div> : <Empty title="Καμία πληρωμή" />}
       </div>}
+
+      {tab === 'discounts' && (() => { const list = hh.filter((x) => x.discount_category || Number(x.discount_pct) > 0 || x.monthly_override != null).filter((x) => x.name.toLowerCase().includes(q.toLowerCase()))
+        const cats = [...new Set(list.map((x) => x.discount_category || 'Χωρίς κατηγορία'))]
+        return <div className="stack">
+          <div className="grid">{cats.map((c) => <div key={c} className="card kpi"><div className="l">{c}</div><div className="v num">{list.filter((x) => (x.discount_category || 'Χωρίς κατηγορία') === c).length}</div><div className="s">οικογένειες</div></div>)}</div>
+          <div className="card flush">{list.length ? <div className="scroll"><table><thead><tr><th>Οικογένεια</th><th>Κατηγορία</th><th>Αιτιολογία</th><th className="r">Έκπτωση</th><th className="r">Ειδική τιμή</th><th className="r">Υπόλοιπο</th></tr></thead><tbody>
+            {list.map((x) => <tr key={x.id}><td><Link to={`/families/${x.id}`}><b>{x.name}</b></Link>{!x.active && <span className="badge" style={{ marginLeft: 6 }}>ανενεργή</span>}</td><td>{x.discount_category || '—'}</td><td className="muted">{x.discount_reason || '—'}</td>
+              <td className="r num">{Number(x.discount_pct) ? x.discount_pct + '%' : '—'}</td><td className="r num">{x.monthly_override != null ? eur(x.monthly_override) : '—'}</td><td className="r num">{eur(x.balance)}</td></tr>)}
+          </tbody></table></div> : <Empty title="Καμία έκπτωση" text="Ορίζεις κατηγορία έκπτωσης (πολύτεκνοι, υποτροφία κ.λπ.), ποσοστό ή ειδική τιμή μέσα στην καρτέλα κάθε οικογένειας." />}</div>
+        </div> })()}
 
       {gen && <GenModal onClose={() => setGen(false)} onDone={(n) => { setGen(false); toast(n ? `Δημιουργήθηκαν ${n} χρεώσεις` : 'Οι χρεώσεις του μήνα υπάρχουν ήδη'); load() }} />}
       {pay && <PayForm household={pay.h} guardians={pay.g} balance={pay.h.balance} canEmail={pay.canEmail} onClose={() => setPay(null)} onSaved={() => { setPay(null); load() }} />}
