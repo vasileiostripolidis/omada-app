@@ -98,7 +98,7 @@ export function BulkInvites({ onClose }: { onClose: () => void }) {
         <input type="checkbox" checked={sel.has(r.g.id)} onChange={(e) => { const n = new Set(sel); if (e.target.checked) n.add(r.g.id); else n.delete(r.g.id); setSel(n) }} />
         <button className="grow" style={{ textAlign: 'left', background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit' }} onClick={() => setOne(r.g)}><b>{r.g.last_name} {r.g.first_name}</b><div className="muted">{r.g.relation} · παιδιά: {r.kids}{r.g.phone ? ` · ${r.g.phone}` : ''}</div></button>
         <button className="btn ghost sm" onClick={() => setOne(r.g)}><Smartphone size={14} />Αποστολή</button></div>)}</div>
-        : <div className="empty"><div className="big">Όλοι οι γονείς έχουν λογαριασμό</div></div>}
+        : <div className="empty"><div className="big">Δεν υπάρχουν γονείς χωρίς λογαριασμό</div></div>}
     </div>
     {one && <InviteModal guardian={one} onClose={() => setOne(null)} />}
   </Modal>
