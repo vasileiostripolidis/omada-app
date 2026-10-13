@@ -45,7 +45,6 @@ export default function Dashboard() {
   }, [])
 
   const pct = k.monthCharged ? Math.min(100, Math.round((k.monthPaid / k.monthCharged) * 100)) : 0
-  const month = new Date().toLocaleDateString('el-GR', { month: 'long', year: 'numeric' })
 
   return (
     <>
@@ -59,7 +58,7 @@ export default function Dashboard() {
         <Link to="/players" className="card kpi"><div className="ico"><Users size={19} /></div><div className="l">Ενεργοί αθλητές</div><div className="v num">{k.players}</div><div className="s">σε {teams.length} ομάδες</div></Link>
         <Link to="/families" className="card kpi"><div className="ico"><HeartHandshake size={19} /></div><div className="l">Οικογένειες</div><div className="v num">{k.families}</div><div className="s">λογαριασμοί χρέωσης</div></Link>
         <Link to="/finance" className="card kpi red"><div className="ico"><Wallet size={19} /></div><div className="l">Ανεξόφλητα</div><div className="v num">{eur(k.owed)}</div><div className="s">{k.overdue} οικογένειες με ληξιπρόθεσμα</div></Link>
-        <Link to="/finance" className="card kpi green"><div className="ico"><TrendingUp size={19} /></div><div className="l">Εισπράξεις {month}</div><div className="v num">{eur(k.monthPaid)}</div>
+        <Link to="/finance" className="card kpi green"><div className="ico"><TrendingUp size={19} /></div><div className="l">Εισπράξεις μήνα</div><div className="v num">{eur(k.monthPaid)}</div>
           <div className="progress" style={{ marginTop: 4 }}><div style={{ width: pct + '%' }} /></div><div className="s">{pct}% των χρεώσεων του μήνα ({eur(k.monthCharged)})</div></Link>
       </div>
 

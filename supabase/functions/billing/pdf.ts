@@ -1,6 +1,9 @@
 // Δημιουργία PDF (κατάσταση λογαριασμού & απόδειξη) με την ταυτότητα του συλλόγου
 import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import * as AT from 'jspdf-autotable'
+// συμβατότητα Deno/Node: η default εξαγωγή μπορεί να είναι «τυλιγμένη»
+// deno-lint-ignore no-explicit-any
+const autoTable: (doc: jsPDF, opts: any) => void = (AT as any).autoTable || (AT as any).default?.default || (AT as any).default
 
 export type Assets = { regular: string; bold: string; logo?: string; sponsors: { name: string; img?: string; fmt?: string }[] }
 export type Club = { club_name: string; address?: string | null; phone?: string | null; email?: string | null; website?: string | null; iban?: string | null; afm?: string | null; email_footer?: string | null; primary_color?: string | null; accent_color?: string | null }
