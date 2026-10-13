@@ -39,13 +39,15 @@ const NAV: NavItem[] = [
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
+  const [isReg, setIsReg] = useState(window.location.hash.startsWith('#/register'))
+  useEffect(() => { const f = () => setIsReg(window.location.hash.startsWith('#/register')); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => setSession(data.session))
     const { data } = sb.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => data.subscription.unsubscribe()
   }, [])
   // Δημόσια φόρμα εγγραφής (χωρίς σύνδεση)
-  if (window.location.hash.startsWith('#/register')) return <Register />
+  if (isReg) return <Register />
   if (session === undefined) return null
   if (!session) return <Login />
   return <Shell email={session.user.email || ''} uid={session.user.id} />
