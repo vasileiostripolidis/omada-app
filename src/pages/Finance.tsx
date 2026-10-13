@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Zap, BellRing, CheckCircle2, Search, CalendarClock, Plus, Trash2, Save } from 'lucide-react'
 import { sb, eur, dt, METHOD, MONTHS, policyTotal, type Charge, type Payment, type Household, type Guardian, type RecurringFee, type Settings, type Team } from '../lib/supabase'
 import { reminders } from '../lib/billing'
+import { callPush } from '../lib/push'
 import { useApp, Modal, PageHead, Empty, StatusBadge } from '../ui'
 import { PayForm } from './FamilyDetail'
 
@@ -46,8 +47,11 @@ export default function Finance() {
   async function sendReminders() {
     if (!confirm(`Αποστολή υπενθύμισης με PDF σε ${hh.filter((x) => x.balance > 0.004 && x.active).length} οικογένειες με οφειλή;`)) return
     setBusy(true)
-    try { const r = await reminders(); toast(`Στάλθηκαν ${r.sent || 0} υπενθυμίσεις${r.skipped ? ` · ${r.skipped} χωρίς αποστολή` : ''}${r.errors?.length ? ' – ' + r.errors[0] : ''}`); load() }
-    catch (e) { toast((e as Error).message) } finally { setBusy(false) }
+    const [em, ps] = await Promise.allSettled([reminders(), callPush({ action: 'debts' })])
+    const parts: string[] = []
+    if (em.status === 'fulfilled') parts.push(`Email: ${em.value.sent || 0}${em.value.errors?.length ? ' (' + em.value.errors[0] + ')' : ''}`); else parts.push('Email: ' + (em.reason as Error).message)
+    if (ps.status === 'fulfilled') parts.push(`Push: ${ps.value.delivered} συσκευές`); else parts.push('Push: ' + (ps.reason as Error).message)
+    toast(parts.join(' · ')); setBusy(false); load()
   }
 
   return (

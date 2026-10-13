@@ -7,10 +7,11 @@ import LineChart from '../components/LineChart'
 import PlayerGoals from '../components/PlayerGoals'
 import PlayerHealth from '../components/PlayerHealth'
 import { useLang } from '../lib/i18n'
+import PushToggle from '../components/PushToggle'
 import type { Announcement } from '../lib/supabase'
 
 export default function ParentApp() {
-  const { email, teams, settings } = useApp()
+  const { email, teams, settings, toast } = useApp()
   const [kids, setKids] = useState<Player[]>([])
   const [hh, setHh] = useState<(Household & { balance: number })[]>([])
   const [charges, setCharges] = useState<Charge[]>([])
@@ -38,6 +39,7 @@ export default function ParentApp() {
         <button className="iconbtn" style={{ background: 'transparent', color: '#fff', borderColor: 'rgba(255,255,255,.25)' }} onClick={() => sb.auth.signOut()} title={t('p_logout')}><LogOut size={16} /></button></header>
       <div className="public-body" style={{ maxWidth: 1000 }}>
         <div className="eyebrow">{lang === 'en' ? 'Parent portal' : 'Πύλη γονέων'}</div><h1 style={{ marginBottom: 4 }}>{t('p_hello')}</h1><div className="muted" style={{ marginBottom: 16 }}>{email}</div>
+        <PushToggle compact lang={lang} toast={toast} />
         {!kids.length ? <div className="card"><Empty title="Δεν βρέθηκαν αθλητές" text="Η γραμματεία πρέπει να συνδέσει το email σας με τον λογαριασμό της οικογένειας." /></div> : <>
           <div className="pills" style={{ marginBottom: 14 }}>{kids.map((x) => <button key={x.id} className={'pill' + (kid === x.id ? ' on' : '')} onClick={() => setKid(x.id)}>{x.first_name}</button>)}</div>
           <div className="tabs">{[['overview', t('p_overview')], ['perf', t('p_perf')], ['goals', t('p_goals')], ['health', t('p_health')], ['news', t('p_news')], ['photos', t('p_photos')], ['money', `${t('p_finance')}${balance > 0.004 ? ` (${eur(balance)})` : ''}`]].map(([key, l]) =>

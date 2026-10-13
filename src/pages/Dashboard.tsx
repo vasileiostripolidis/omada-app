@@ -5,6 +5,7 @@ import { sb, eur, dt, fullName, EVTYPE, BRAND, type Player, type EventRow, type 
 import { useApp, TeamChip, Empty } from '../ui'
 import { eligibility, openInjuries, type Staff } from '../lib/supabase'
 import { staffAlerts } from './Staff'
+import PushToggle from '../components/PushToggle'
 
 export default function Dashboard() {
   const { isCoach } = useApp()
@@ -119,7 +120,7 @@ function OfficeDashboard() {
 }
 
 function CoachDashboard() {
-  const { teams, myTeams, settings } = useApp()
+  const { teams, myTeams, settings, toast } = useApp()
   const mine = teams.filter((t) => myTeams.includes(t.id))
   const [players, setPlayers] = useState<Player[]>([])
   const [next, setNext] = useState<EventRow[]>([])
@@ -150,6 +151,7 @@ function CoachDashboard() {
     <div className="hero"><img src={settings?.logo_url || BRAND + 'pss-logo.png'} alt="" />
       <div className="grow"><div className="eyebrow" style={{ color: '#ff6b80' }}>Προπονητής</div><h1>Οι ομάδες μου</h1>
         <div className="sub">{new Date().toLocaleDateString('el-GR', { weekday: 'long', day: 'numeric', month: 'long' })}</div></div></div>
+    <PushToggle compact toast={toast} />
     {!mine.length && <div className="card"><Empty title="Δεν σου έχουν ανατεθεί ομάδες" text="Η γραμματεία αναθέτει ομάδες από τις Ρυθμίσεις → Χρήστες." /></div>}
     <div className="grid" style={{ marginBottom: 16 }}>{mine.map((t) => <Link key={t.id} to="/teams" className="card row">
       {t.logo_url ? <img src={t.logo_url} alt="" style={{ width: 54, height: 54, objectFit: 'contain' }} /> : <div className="avatar">{t.name[0]}</div>}

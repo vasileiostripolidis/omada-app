@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
 import { sb, eur, fullName, monthlyAmount, RELATIONS, type Household, type Guardian } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty } from '../ui'
+import { BulkInvites } from '../components/Invites'
 
 type Kid = { name: string; share: number; active: boolean; team_id: string | null; birth_date: string | null }
 type Row = Household & { guardians: Guardian[]; kids: Kid[]; balance: number; overdue: number }
@@ -13,6 +14,7 @@ export default function Families() {
   const [rows, setRows] = useState<Row[]>([])
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('all')
+  const [invites, setInvites] = useState(false)
   const [adding, setAdding] = useState(false)
 
   const load = async () => {
@@ -38,8 +40,10 @@ export default function Families() {
   return (
     <>
       <PageHead eyebrow="Λογαριασμοί χρέωσης" title="Γονείς & Οικογένειες" sub="Κάθε οικογένεια χρεώνεται μία φορά τον μήνα, σύμφωνα με την πολιτική για 1, 2, 3+ παιδιά.">
+        <button className="btn ghost" onClick={() => setInvites(true)}>Προσκλήσεις γονέων</button>
         <button className="btn red" onClick={() => setAdding(true)}><Plus size={18} />Νέα οικογένεια</button>
       </PageHead>
+      {invites && <BulkInvites onClose={() => setInvites(false)} />}
       <div className="row" style={{ marginBottom: 14 }}>
         <div className="search"><Search size={17} /><input placeholder="Αναζήτηση γονέα, τηλεφώνου, παιδιού…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         <div className="pills">{[['all', 'Ενεργές'], ['debt', 'Με οφειλή'], ['nokids', 'Χωρίς παιδιά'], ['inactive', 'Ανενεργές']].map(([k, l]) =>

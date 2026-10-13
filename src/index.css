@@ -217,3 +217,11 @@ tr.click:hover td { background: var(--soft); }
 .lang { display: inline-flex; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; overflow: hidden; }
 .lang button { background: transparent; color: #fff; border: 0; padding: 5px 9px; font-weight: 700; cursor: pointer; font-size: 12px; }
 .lang button.on { background: var(--red); }
+.help-body { display: none; }
+@media print {
+  body.print-help .help, body.print-help .help * { visibility: visible; }
+  body.print-help .help { position: absolute; left: 0; top: 0; width: 100%; }
+  body.print-help .help-body { display: block !important; }
+  body.print-help .help .btn, body.print-help .help svg { display: none !important; }
+  body.print-help .help .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+}

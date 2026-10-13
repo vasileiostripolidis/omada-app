@@ -3,6 +3,7 @@ import { Plus, Pin, Trash2, Upload, Tag, EyeOff, Megaphone } from 'lucide-react'
 import { sb, dt, fullName, uploadPublic, type Announcement, type Player } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty, TeamChip } from '../ui'
 import Urgent from '../components/Urgent'
+import { sendPush } from '../lib/push'
 
 type Photo = { id: string; album: string; team_id: string | null; path: string; caption: string | null; taken_at: string | null; url?: string; tags: string[] }
 
@@ -25,6 +26,7 @@ function NewsTab() {
   const { teams, toast, isCoach, myTeams } = useApp()
   const [rows, setRows] = useState<Announcement[]>([])
   const [edit, setEdit] = useState<Partial<Announcement> | null>(null)
+  const [notify, setNotify] = useState(true)
   const load = () => sb.from('announcements').select('*').order('pinned', { ascending: false }).order('created_at', { ascending: false }).then(({ data }) => setRows(data || []))
   useEffect(() => { load() }, [])
   async function save() {
@@ -32,7 +34,10 @@ function NewsTab() {
     if (isCoach && !edit.team_id) return toast('Επίλεξε ομάδα')
     const { id, ...rest } = edit
     const r = id ? await sb.from('announcements').update(rest).eq('id', id) : await sb.from('announcements').insert(rest)
-    if (r.error) return toast(r.error.message); setEdit(null); load(); toast('Δημοσιεύτηκε ✓')
+    if (r.error) return toast(r.error.message)
+    if (!id && notify) sendPush({ title: rest.title!, body: (rest.body || '').slice(0, 180), audience: 'parents', team_id: rest.team_id || null, tag: 'news' }).then((x) => toast(`Δημοσιεύτηκε ✓ · push σε ${x.delivered} συσκευές`)).catch(() => toast('Δημοσιεύτηκε ✓'))
+    else toast('Δημοσιεύτηκε ✓')
+    setEdit(null); load()
   }
   async function img(e: React.ChangeEvent<HTMLInputElement>) { const f = e.target.files?.[0]; if (f) setEdit({ ...edit, image_url: await uploadPublic(f, 'news') }) }
   const opts = isCoach ? teams.filter((t) => myTeams.includes(t.id)) : teams
@@ -52,6 +57,7 @@ function NewsTab() {
         <label className="f full">Τίτλος<input value={edit.title || ''} onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></label>
         <label className="f">Αφορά<select value={edit.team_id || ''} onChange={(e) => setEdit({ ...edit, team_id: e.target.value || null })}>{!isCoach && <option value="">Όλη η ακαδημία</option>}{opts.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
         <label className="check" style={{ alignSelf: 'end' }}><input type="checkbox" checked={!!edit.pinned} onChange={(e) => setEdit({ ...edit, pinned: e.target.checked })} />Καρφίτσωμα στην κορυφή</label>
+        {!edit.id && <label className="check full"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />Ειδοποίηση push στα κινητά των γονέων</label>}
         <label className="f full">Κείμενο<textarea rows={6} value={edit.body || ''} onChange={(e) => setEdit({ ...edit, body: e.target.value })} /></label>
         <div className="full row">{edit.image_url && <img src={edit.image_url} alt="" style={{ height: 60, borderRadius: 8 }} />}<label className="btn ghost" style={{ cursor: 'pointer' }}><Upload size={15} />Εικόνα<input type="file" accept="image/*" hidden onChange={img} /></label></div>
       </div></Modal>}

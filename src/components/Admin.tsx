@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ShieldCheck, Download, CalendarRange, ArrowRight, KeyRound } from 'lucide-react'
+import { ShieldCheck, Download, CalendarRange, ArrowRight, KeyRound, History } from 'lucide-react'
 import { sb, dt, type Player } from '../lib/supabase'
 import { useApp, Modal } from '../ui'
 
@@ -111,4 +111,43 @@ export async function exportPlayerData(pid: string, name: string) {
   const { data, error } = await sb.rpc('player_data_export', { pid })
   if (error) throw error
   saveJson(data, `GDPR_${name}.json`)
+}
+
+// ===== Ιστορικό αλλαγών =====
+const TBL: Record<string, string> = { households: 'Οικογένεια', guardians: 'Γονέας', player_households: 'Σύνδεση παιδιού-οικογένειας', players: 'Αθλητής', charges: 'Χρέωση', payments: 'Πληρωμή', recurring_fees: 'Πάγια χρέωση', club_settings: 'Ρυθμίσεις', profiles: 'Χρήστης', teams: 'Ομάδα', coach_teams: 'Ανάθεση ομάδας', consents: 'Συγκατάθεση', guardian_invites: 'Πρόσκληση γονέα' }
+const OP: Record<string, [string, string]> = { INSERT: ['Δημιουργία', 'b-ok'], UPDATE: ['Αλλαγή', 'b-info'], DELETE: ['Διαγραφή', 'b-bad'] }
+const LABEL: Record<string, string> = { amount: 'Ποσό', description: 'Περιγραφή', first_name: 'Όνομα', last_name: 'Επώνυμο', email: 'Email', phone: 'Τηλέφωνο', name: 'Όνομα', team_id: 'Ομάδα', active: 'Ενεργός', discount_pct: 'Έκπτωση %', monthly_override: 'Ειδική τιμή', share_pct: 'Ποσοστό', role: 'Ρόλος', method: 'Τρόπος', paid_at: 'Ημ/νία πληρωμής', due_date: 'Λήξη', medical_expiry: 'Ιατρική έως', discount_category: 'Κατηγορία έκπτωσης', kind: 'Είδος', granted: 'Συγκατάθεση', household_id: 'Οικογένεια' }
+type Audit = { id: number; at: string; actor_email: string | null; tbl: string; op: string; row_id: string | null; old_data: Record<string, unknown> | null; new_data: Record<string, unknown> | null }
+const show = (v: unknown) => v == null || v === '' ? '—' : typeof v === 'boolean' ? (v ? 'Ναι' : 'Όχι') : typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v).slice(0, 60)
+const summary = (a: Audit) => {
+  const d = a.new_data || a.old_data || {}
+  const who = [d.first_name, d.last_name].filter(Boolean).join(' ') || (d.name as string) || (d.description as string) || ''
+  if (a.op === 'UPDATE') return Object.keys(a.new_data || {}).filter((k) => !['id', 'breakdown'].includes(k)).slice(0, 4).map((k) => `${LABEL[k] || k}: ${show(a.old_data?.[k])} → ${show(a.new_data?.[k])}`).join(' · ')
+  return [who, d.amount != null ? Number(d.amount).toFixed(2) + ' €' : ''].filter(Boolean).join(' · ')
+}
+export function AuditLog() {
+  const [rows, setRows] = useState<Audit[]>([])
+  const [tbl, setTbl] = useState('')
+  const [who, setWho] = useState('')
+  const [limit, setLimit] = useState(100)
+  useEffect(() => {
+    let q = sb.from('audit_log').select('*').order('at', { ascending: false }).limit(limit)
+    if (tbl) q = q.eq('tbl', tbl)
+    if (who === 'system') q = q.is('actor', null); else if (who) q = q.eq('actor_email', who)
+    q.then(({ data }) => setRows((data || []) as Audit[]))
+  }, [tbl, who, limit])
+  const people = [...new Set(rows.map((r) => r.actor_email).filter(Boolean))] as string[]
+  return <div className="card flush" style={{ marginTop: 14 }}>
+    <div className="card-head" style={{ flexWrap: 'wrap', gap: 8 }}><h2><History size={17} style={{ verticalAlign: -3 }} /> Ιστορικό αλλαγών</h2>
+      <div className="row"><select value={tbl} onChange={(e) => setTbl(e.target.value)} style={{ width: 'auto' }}><option value="">Όλα</option>{Object.entries(TBL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        <select value={who} onChange={(e) => setWho(e.target.value)} style={{ width: 'auto' }}><option value="">Όλοι οι χρήστες</option><option value="system">Αυτόματα (σύστημα)</option>{people.map((p) => <option key={p}>{p}</option>)}</select></div></div>
+    {rows.length ? <div className="scroll"><table><thead><tr><th>Πότε</th><th>Ποιος</th><th>Τι</th><th>Λεπτομέρειες</th></tr></thead><tbody>
+      {rows.map((a) => <tr key={a.id}><td className="muted" style={{ whiteSpace: 'nowrap' }}>{new Date(a.at).toLocaleString('el-GR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+        <td style={{ whiteSpace: 'nowrap' }}>{a.actor_email || <span className="muted">Σύστημα</span>}</td>
+        <td style={{ whiteSpace: 'nowrap' }}><span className={'badge ' + (OP[a.op]?.[1] || '')}>{OP[a.op]?.[0] || a.op}</span> {TBL[a.tbl] || a.tbl}</td>
+        <td style={{ fontSize: 13 }}>{summary(a)}</td></tr>)}
+    </tbody></table></div> : <div className="empty">Δεν υπάρχουν καταγραφές ακόμα</div>}
+    {rows.length >= limit && <div className="item"><button className="btn ghost sm" onClick={() => setLimit(limit + 200)}>Περισσότερα</button></div>}
+    <div className="item muted">Καταγράφεται αυτόματα κάθε δημιουργία, αλλαγή και διαγραφή σε αθλητές, οικογένειες, γονείς, χρεώσεις, πληρωμές, ρυθμίσεις, ρόλους χρηστών και συγκαταθέσεις. Δεν μπορεί να τροποποιηθεί από κανέναν.</div>
+  </div>
 }

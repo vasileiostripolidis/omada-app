@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Upload } from 'lucide-react'
 import { sb, uploadPublic, ROLES, type Settings } from '../lib/supabase'
 import { useApp, PageHead } from '../ui'
-import { SeasonRollover, TwoFactor, Backups } from '../components/Admin'
+import { SeasonRollover, TwoFactor, Backups, AuditLog } from '../components/Admin'
+import PushToggle from '../components/PushToggle'
 
 type Profile = { id: string; email: string; full_name: string; role: string }
 
@@ -70,9 +71,11 @@ export default function SettingsPage() {
       <div className="section-t" style={{ marginTop: 18 }}>Ασφάλεια & σεζόν</div>
       <div className="stack">
         <TwoFactor />
+        <PushToggle toast={toast} />
         {admin && <Backups />}
         {admin && <SeasonRollover />}
       </div>
+      <AuditLog />
 
       <div className="card flush" style={{ marginTop: 14 }}>
         <div className="card-head"><h2>Χρήστες εφαρμογής</h2></div>

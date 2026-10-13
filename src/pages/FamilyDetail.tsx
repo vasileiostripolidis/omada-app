@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Pencil, Trash2, Phone, Mail, Download, Send, CheckCircle2, Merge, UserPlus, Receipt, ArrowRightLeft, BellOff } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, Phone, Mail, Download, Send, CheckCircle2, Merge, UserPlus, Receipt, ArrowRightLeft, BellOff, Smartphone } from 'lucide-react'
+import { InviteModal } from '../components/Invites'
 import { sb, eur, dt, fullName, initials, monthlyAmount, today, METHOD, RELATIONS, DISCOUNT_CATS, type Household, type Guardian, type Charge, type Payment, type Player } from '../lib/supabase'
 import { statement, receipt, downloadPdf } from '../lib/billing'
 import { useApp, Modal, Empty, StatusBadge } from '../ui'
@@ -17,6 +18,7 @@ export default function FamilyDetail() {
   const [charges, setCharges] = useState<Charge[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [balance, setBalance] = useState(0)
+  const [inv, setInv] = useState<Guardian | null>(null)
   const [editG, setEditG] = useState<Partial<Guardian> | null>(null)
   const [moveG, setMoveG] = useState<Guardian | null>(null)
   const [addKid, setAddKid] = useState(false)
@@ -106,7 +108,9 @@ export default function FamilyDetail() {
             <div className="avatar" style={{ background: 'var(--navy-3)' }}>{initials(g)}</div>
             <div className="grow"><div className="t">{g.first_name} {g.last_name}</div>
               <div className="muted">{g.relation}{g.phone ? ` · ${g.phone}` : ''}{g.email ? ` · ${g.email}` : ''}</div>
-              {!g.receives_emails && <span className="badge" style={{ marginTop: 4 }}><BellOff size={11} />χωρίς ειδοποιήσεις</span>}</div>
+              {!g.receives_emails && <span className="badge" style={{ marginTop: 4 }}><BellOff size={11} />χωρίς ειδοποιήσεις</span>}
+              {(g as Guardian & { profile_id?: string }).profile_id && <span className="badge b-ok" style={{ marginTop: 4 }}><Smartphone size={11} />στην εφαρμογή</span>}</div>
+            <button className="iconbtn" title="Πρόσβαση στην εφαρμογή (σύνδεσμος / QR)" onClick={() => setInv(g)}><Smartphone size={15} /></button>
             {g.phone && <a className="iconbtn" href={`tel:${g.phone}`}><Phone size={15} /></a>}
             {g.email && <a className="iconbtn" href={`mailto:${g.email}`}><Mail size={15} /></a>}
             <button className="iconbtn" title="Επεξεργασία" onClick={() => setEditG(g)}><Pencil size={15} /></button>
@@ -176,6 +180,7 @@ export default function FamilyDetail() {
         <button className="btn danger" onClick={removeFamily}><Trash2 size={16} />Διαγραφή οικογένειας</button>
       </div>
 
+      {inv && <InviteModal guardian={inv} onClose={() => { setInv(null); load() }} />}
       {editG && <GuardianForm g={editG} onClose={() => setEditG(null)} onSaved={() => { setEditG(null); load() }} />}
       {moveG && <MoveGuardian g={moveG} onClose={() => setMoveG(null)} onDone={() => { setMoveG(null); load() }} />}
       {addKid && <AddKid householdId={h.id} exclude={kids.map((k) => k.player_id)} onClose={() => setAddKid(false)} onDone={() => { setAddKid(false); load() }} />}

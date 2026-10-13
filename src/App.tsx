@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, HeartHandshake, Shield, Wallet, CalendarDays, Award, Settings as Cog, LogOut, Menu, Activity, ClipboardList, Package, BookOpen, IdCard, Megaphone, CloudOff } from 'lucide-react'
+import { LayoutDashboard, Users, HeartHandshake, Shield, Wallet, CalendarDays, Award, Settings as Cog, LogOut, Menu, Activity, ClipboardList, Package, BookOpen, IdCard, Megaphone, CloudOff, LifeBuoy, FileSpreadsheet } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { sb, BRAND, ROLES, type Settings, type Team } from './lib/supabase'
 import { AppCtx, Modal } from './ui'
@@ -24,6 +24,9 @@ import Drills from './pages/Drills'
 import StaffPage from './pages/Staff'
 import News from './pages/News'
 import Privacy from './pages/Privacy'
+import Join, { claimPending } from './pages/Join'
+import Help from './pages/Help'
+import ImportData from './pages/ImportData'
 import MfaGate from './components/MfaGate'
 import { syncPending, pendingCount } from './lib/offline'
 
@@ -43,10 +46,12 @@ const NAV: NavItem[] = [
   { to: '/sponsors', icon: Award, label: 'Χορηγοί', short: 'Χορηγοί', roles: OFFICE },
   { to: '/equipment', icon: Package, label: 'Αποθήκη εξοπλισμού', short: 'Αποθήκη', roles: OFFICE },
   { sec: 'Διαχείριση', to: '/staff', icon: IdCard, label: 'Προπονητές & Προσωπικό', short: 'Προσωπικό', roles: OFFICE },
+  { to: '/import', icon: FileSpreadsheet, label: 'Εισαγωγή από Excel', short: 'Εισαγωγή', roles: OFFICE },
   { to: '/settings', icon: Cog, label: 'Ρυθμίσεις', short: 'Ρυθμίσεις', roles: OFFICE },
+  { to: '/help', icon: LifeBuoy, label: 'Οδηγός χρήσης', short: 'Οδηγός', roles: ALL },
 ]
 
-const isPublic = () => /^#\/(register|privacy|terms)/.test(window.location.hash)
+const isPublic = () => /^#\/(register|privacy|terms|join)/.test(window.location.hash)
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -58,7 +63,7 @@ export default function App() {
     return () => data.subscription.unsubscribe()
   }, [])
   // Δημόσια φόρμα εγγραφής (χωρίς σύνδεση)
-  if (isReg) return window.location.hash.startsWith('#/register') ? <Register /> : <Privacy />
+  if (isReg) return window.location.hash.startsWith('#/register') ? <Register /> : window.location.hash.startsWith('#/join') ? <Join /> : <Privacy />
   if (session === undefined) return null
   if (!session) return <Login />
   return <MfaGate><Shell email={session.user.email || ''} uid={session.user.id} /></MfaGate>
@@ -73,7 +78,7 @@ function Shell({ email, uid }: { email: string; uid: string }) {
   const reloadSettings = () => { sb.from('club_settings').select('*').single().then(({ data }) => setSettings(data)) }
   const reloadTeams = () => { sb.from('teams').select('*').order('name').then(({ data }) => setTeams(data || [])) }
   useEffect(() => {
-    sb.from('profiles').select('role').eq('id', uid).single().then(({ data }) => setRole(data?.role || 'pending'))
+    claimPending().catch(() => false).finally(() => sb.from('profiles').select('role').eq('id', uid).single().then(({ data }) => setRole(data?.role || 'pending')))
     sb.from('coach_teams').select('team_id').eq('profile_id', uid).then(({ data }) => setMyTeams((data || []).map((x) => x.team_id)))
     reloadSettings(); reloadTeams()
   }, [uid])
@@ -138,6 +143,7 @@ function Layout({ email, role }: { email: string; role: string }) {
           <Route path="/performance" element={<Performance />} />
           <Route path="/drills" element={<Drills />} />
           <Route path="/news" element={<News />} />
+          <Route path="/help" element={<Help />} />
           {OFFICE.includes(role) && <>
             <Route path="/families" element={<Families />} />
             <Route path="/families/:id" element={<FamilyDetail />} />
@@ -146,6 +152,7 @@ function Layout({ email, role }: { email: string; role: string }) {
             <Route path="/sponsors" element={<Sponsors />} />
             <Route path="/equipment" element={<Equipment />} />
             <Route path="/staff" element={<StaffPage />} />
+            <Route path="/import" element={<ImportData />} />
             <Route path="/settings" element={<SettingsPage />} />
           </>}
         </Routes>

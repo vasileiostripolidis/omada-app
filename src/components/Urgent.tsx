@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { MessageSquare, Copy, Send } from 'lucide-react'
+import { MessageSquare, Copy, Send, Bell } from 'lucide-react'
+import { sendPush } from '../lib/push'
 import { sb, fullName, isAdult, type EventRow, type Player } from '../lib/supabase'
 import { useApp, Modal } from '../ui'
 
@@ -30,7 +31,8 @@ export default function Urgent({ ev, teamId, teamName, onClose }: { ev?: EventRo
       <label className="f">Μήνυμα ({msg.length} χαρακτήρες)<textarea rows={4} value={msg} onChange={(e) => setMsg(e.target.value)} /></label>
       <div className="muted">{phones.length} παραλήπτες (γονείς & ενήλικες αθλητές με κινητό)</div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
-        <a className="btn red" href={smsLink}><MessageSquare size={16} />Άνοιγμα SMS</a>
+        <button className="btn red" onClick={async () => { try { const r = await sendPush({ title: `Επείγον · ${teamName}`, body: msg, audience: 'parents', team_id: teamId, tag: 'urgent' }); toast(`Push: ${r.delivered} από ${r.recipients} συσκευές`) } catch (e) { toast((e as Error).message) } }}><Bell size={16} />Push στην εφαρμογή</button>
+        <a className="btn ghost" href={smsLink}><MessageSquare size={16} />Άνοιγμα SMS</a>
         <button className="btn ghost" onClick={() => copy(msg, 'Το μήνυμα αντιγράφηκε – επικόλλησέ το στο group Viber της ομάδας')}><Copy size={16} />Αντιγραφή για Viber</button>
         <button className="btn ghost" onClick={() => copy(nums.join(', '), 'Οι αριθμοί αντιγράφηκαν')}><Send size={16} />Αντιγραφή αριθμών</button>
       </div>
