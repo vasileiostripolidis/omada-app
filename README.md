@@ -36,3 +36,22 @@ npx cap open android     # → Build → Generate Signed Bundle (.aab) → Googl
 npx cap open ios         # → Product → Archive → App Store Connect
 ```
 Λογαριασμοί: Google Play Developer (25$ εφάπαξ), Apple Developer (99$/έτος).
+
+## Εφαρμογή iPhone / iPad (App Store)
+
+Το Xcode project βρίσκεται στον φάκελο `ios/`. Σε Mac με Xcode 26:
+
+```bash
+git pull
+npm install
+npm run build && npx cap sync ios
+npx cap open ios        # ανοίγει το Xcode
+```
+
+Στο Xcode: Target **App** → Signing & Capabilities → επιλέξτε Team (λογαριασμός Apple Developer) → προσθέστε **Push Notifications**.
+Δοκιμή: επιλέξτε προσομοιωτή iPhone ή iPad και ▶. Ανέβασμα: Product → Archive → Distribute App → App Store Connect.
+
+Ειδοποιήσεις Apple: δημιουργήστε κλειδί APNs (Certificates, IDs & Profiles → Keys → Apple Push Notifications service) και
+καταχωρίστε στο Supabase → Edge Functions → Secrets: `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY` (περιεχόμενο του .p8).
+
+Λογαριασμοί επίδειξης για τον έλεγχο της Apple: Ρυθμίσεις → «Λογαριασμοί επίδειξης». Τα δεδομένα demo είναι κρυφά από όλους τους πραγματικούς χρήστες.
