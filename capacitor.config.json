@@ -2,6 +2,37 @@
   "appId": "gr.patrasschoolssoccer.app",
   "appName": "Patras Schools Soccer",
   "webDir": "dist",
-  "android": { "allowMixedContent": false },
-  "ios": { "contentInset": "always" }
+  "backgroundColor": "#021534",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#021534"
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#021534",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "launchAutoHide": true,
+      "backgroundColor": "#021534",
+      "showSpinner": false,
+      "iosSpinnerStyle": "small",
+      "splashFullScreen": false,
+      "splashImmersive": false
+    },
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#021534"
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
 }

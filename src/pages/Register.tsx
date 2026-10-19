@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Eraser, ArrowLeft, ArrowRight, Upload } from 'lucide-react'
 import { sb, BRAND, CONSENTS, RELATIONS } from '../lib/supabase'
 import { useLang, REL_EN, POS_EN } from '../lib/i18n'
+import { openUrl, WEB_APP } from '../lib/native'
 
 type G = { first_name: string; last_name: string; relation: string; phone: string; email: string }
 const emptyG = (relation: string): G => ({ first_name: '', last_name: '', relation, phone: '', email: '' })
@@ -117,7 +118,7 @@ export default function Register() {
             </>}
             {step === 2 && <>
               <div className="eyebrow">{t('step')} 3 {t('of')} 3</div><h1 style={{ marginBottom: 6 }}>{t('consents_t')}</h1>
-              <p className="muted" style={{ marginTop: 0 }}>{t('gdpr_note')} <a href="#/privacy" target="_blank" rel="noreferrer">{t('read_privacy')}</a>.</p>
+              <p className="muted" style={{ marginTop: 0 }}>{t('gdpr_note')} <a href="#/privacy" onClick={(e) => { e.preventDefault(); openUrl(WEB_APP + '#/privacy') }}>{t('read_privacy')}</a>.</p>
               <div className="stack">{CONSENTS.map((c) => <label key={c.key} className="check" style={{ alignItems: 'flex-start', padding: 12, borderRadius: 10, background: 'var(--soft)' }}>
                 <input type="checkbox" checked={!!consents[c.key]} onChange={(e) => setConsents({ ...consents, [c.key]: e.target.checked })} style={{ marginTop: 2 }} />
                 <span>{t(('c_' + c.key) as 'c_data')} {c.required ? <b style={{ color: 'var(--red)' }}>{t('required')}</b> : <span className="muted">{t('optional')}</span>}</span></label>)}</div>

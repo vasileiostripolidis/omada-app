@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Download, Upload, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import { sb, type Team } from '../lib/supabase'
 import { useApp, PageHead } from '../ui'
+import { saveFile } from '../lib/native'
 
 // Στήλες προτύπου (μία γραμμή ανά παιδί· τα αδέρφια ενώνονται αυτόματα σε μία οικογένεια με βάση το κινητό/email του 1ου γονέα)
 const COLS = [
@@ -60,7 +61,7 @@ export default function ImportData() {
       '• Αν ένας αθλητής υπάρχει ήδη (ίδιο ονοματεπώνυμο και ημ. γέννησης) δεν θα ξαναπεραστεί.', '• Αν το κινητό/email γονέα υπάρχει ήδη σε οικογένεια της εφαρμογής, το παιδί μπαίνει σε εκείνη την οικογένεια.',
     ].forEach((t, i) => { const r = info.addRow([t]); if (i === 0) r.font = { bold: true, size: 14 } })
     const buf = await wb.xlsx.writeBuffer()
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'PSS_Protypo_Eisagogis.xlsx'; a.click()
+    await saveFile(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'PSS_Protypo_Eisagogis.xlsx')
   }
 
   async function read(f: File) {

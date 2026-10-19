@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { sb, BRAND } from '../lib/supabase'
+import { WEB_APP } from '../lib/native'
 
 export default function Login() {
   const [mode, setMode] = useState<'in' | 'up' | 'reset'>('in')
@@ -11,7 +12,7 @@ export default function Login() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setMsg(null); setBusy(true)
-    const redirect = window.location.origin + window.location.pathname
+    const redirect = WEB_APP
     if (mode === 'reset') {
       const r = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirect })
       setBusy(false)

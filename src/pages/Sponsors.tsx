@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Globe, Phone, Mail, Pencil, Trash2, Upload } from 'lucide-react'
 import { sb, eur, dt, uploadPublic, TIERS, type Sponsor } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty } from '../ui'
+import { openUrl } from '../lib/native'
 
 export default function Sponsors() {
   const [rows, setRows] = useState<Sponsor[]>([])
@@ -26,7 +27,7 @@ export default function Sponsors() {
             <div className="muted">{s.contact_name}{s.start_date || s.end_date ? ` · ${dt(s.start_date)} – ${dt(s.end_date)}` : ''}</div>
             <div className="row">{expired && <span className="badge b-bad">Έληξε</span>}{s.show_on_documents ? <span className="badge b-ok">Στα PDF/email</span> : <span className="badge">Κρυφός</span>}</div>
             <div className="row" style={{ marginTop: 'auto' }}>
-              {s.website && <a className="iconbtn" href={s.website.startsWith('http') ? s.website : 'https://' + s.website} target="_blank" rel="noreferrer"><Globe size={15} /></a>}
+              {s.website && <a className="iconbtn" href={s.website.startsWith('http') ? s.website : 'https://' + s.website} onClick={(e) => { e.preventDefault(); openUrl(e.currentTarget.href) }}><Globe size={15} /></a>}
               {s.phone && <a className="iconbtn" href={`tel:${s.phone}`}><Phone size={15} /></a>}
               {s.email && <a className="iconbtn" href={`mailto:${s.email}`}><Mail size={15} /></a>}
               <div className="grow" /><button className="btn ghost sm" onClick={() => setEdit(s)}><Pencil size={14} />Επεξεργασία</button>

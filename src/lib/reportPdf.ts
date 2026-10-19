@@ -2,6 +2,7 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { CATEGORIES, MONTHS, type MetricDef, type Player, type Settings } from './supabase'
+import { saveFile } from './native'
 
 const NAVY = '#021534', RED = '#c8102e', GREY = '#5b6475'
 const up = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
@@ -134,5 +135,5 @@ export async function evaluationPdf(d: ReportData) {
   doc.setDrawColor('#9aa3b5'); doc.line(130, y, 196, y); doc.setFontSize(8.5); doc.setTextColor(GREY); doc.text('Ο προπονητής', 163, y + 5, { align: 'center' })
   const pages = doc.getNumberOfPages()
   for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFillColor(NAVY); doc.rect(0, 287, 210, 10, 'F'); doc.setFontSize(7.5); doc.setTextColor('#fff'); doc.text(club, 14, 293); doc.text(`Σελίδα ${i}/${pages}`, 196, 293, { align: 'right' }) }
-  doc.save(`Axiologisi_${d.player.last_name}_${d.player.first_name}.pdf`)
+  await saveFile(doc.output('blob'), `Axiologisi_${d.player.last_name}_${d.player.first_name}.pdf`)
 }

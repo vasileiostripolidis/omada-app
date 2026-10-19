@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import { sb } from '../lib/supabase'
 import { BRAND } from '../lib/supabase'
 import { useLang } from '../lib/i18n'
 
@@ -13,6 +15,8 @@ const PRIVACY: Record<'el' | 'en', Sec[]> = {
     ['Πόσο καιρό τα κρατάμε', ['Όσο ο αθλητής είναι μέλος της ακαδημίας και έως 2 έτη μετά την αποχώρησή του. Τα οικονομικά στοιχεία τηρούνται όσο ορίζει η φορολογική νομοθεσία. Μετά τα δεδομένα διαγράφονται ή ανωνυμοποιούνται.']],
     ['Τα δικαιώματά σας', ['Πρόσβαση: μπορείτε να ζητήσετε αντίγραφο όλων των δεδομένων (το παρέχουμε σε ηλεκτρονική μορφή).', 'Διόρθωση λανθασμένων στοιχείων.', 'Διαγραφή / ανωνυμοποίηση μετά την αποχώρηση.', 'Ανάκληση οποιασδήποτε συγκατάθεσης ανά πάσα στιγμή, χωρίς να επηρεάζεται η νομιμότητα της επεξεργασίας πριν την ανάκληση.', 'Φορητότητα και εναντίωση.', 'Καταγγελία στην Αρχή Προστασίας Δεδομένων Προσωπικού Χαρακτήρα (www.dpa.gr).']],
     ['Ασφάλεια', ['Κρυπτογραφημένη σύνδεση (HTTPS), πρόσβαση ανά ρόλο, σύνδεση 2 βημάτων για το προσωπικό, εβδομαδιαία αντίγραφα ασφαλείας. Τα αρχεία (ιατρικές βεβαιώσεις, δελτία) αποθηκεύονται σε ιδιωτικό χώρο και ανοίγουν μόνο με προσωρινό σύνδεσμο.']],
+    ['Εφαρμογή κινητού & ειδοποιήσεις', ['Η εφαρμογή δεν περιέχει διαφημίσεις, δεν χρησιμοποιεί εργαλεία ανάλυσης (analytics) τρίτων και δεν παρακολουθεί τη δραστηριότητά σας σε άλλες εφαρμογές ή ιστοσελίδες.', 'Αν ενεργοποιήσετε τις ειδοποιήσεις, αποθηκεύεται ένα αναγνωριστικό της συσκευής σας, το οποίο χρησιμοποιείται μόνο για την αποστολή ειδοποιήσεων μέσω της υπηρεσίας της Apple (iPhone/iPad), της Google (Android) ή του browser σας. Μπορείτε να τις απενεργοποιήσετε οποτεδήποτε.', 'Η κάμερα και οι φωτογραφίες της συσκευής χρησιμοποιούνται μόνο όταν επιλέγετε εσείς να ανεβάσετε ένα έγγραφο ή μια φωτογραφία.', 'Οι γραμματοσειρές της εφαρμογής φορτώνονται από την υπηρεσία Google Fonts.']],
+    ['Διαγραφή λογαριασμού', ['Μπορείτε να διαγράψετε τον λογαριασμό σας οποτεδήποτε μέσα από την εφαρμογή: «Ο λογαριασμός μου» → «Διαγραφή λογαριασμού». Διαγράφονται ο λογαριασμός σύνδεσης και τα στοιχεία πρόσβασης. Όσα στοιχεία η ακαδημία οφείλει να τηρεί από τον νόμο (π.χ. πληρωμές) διατηρούνται για τον απαιτούμενο χρόνο, χωρίς σύνδεση με τον λογαριασμό σας.', 'Για πλήρη διαγραφή ή ανωνυμοποίηση των στοιχείων του αθλητή, επικοινωνήστε με τη γραμματεία.']],
   ],
   en: [
     ['Data controller', ['The data controller is the football academy “Patras Schools Soccer”, Patras, Greece. For any question about your data please contact the academy office.']],
@@ -23,6 +27,8 @@ const PRIVACY: Record<'el' | 'en', Sec[]> = {
     ['How long we keep it', ['While the player is a member of the academy and up to 2 years after leaving. Financial records are kept as long as tax law requires. Data is then deleted or anonymised.']],
     ['Your rights', ['Access: you can request a copy of all data (we provide it electronically).', 'Rectification of incorrect data.', 'Erasure / anonymisation after leaving.', 'Withdrawal of any consent at any time, without affecting processing carried out before withdrawal.', 'Portability and objection.', 'Complaint to the Hellenic Data Protection Authority (www.dpa.gr).']],
     ['Security', ['Encrypted connection (HTTPS), role-based access, two-step sign-in for staff, weekly backups. Files (medical certificates, player cards) are stored privately and opened only via temporary links.']],
+    ['Mobile app & notifications', ['The app contains no advertising, uses no third-party analytics and does not track your activity across other apps or websites.', 'If you enable notifications, a device identifier is stored and used only to deliver notifications through Apple (iPhone/iPad), Google (Android) or your browser. You can turn them off at any time.', "The device camera and photos are used only when you choose to upload a document or photo.", "The app's fonts are loaded from Google Fonts."]],
+    ['Account deletion', ['You can delete your account at any time inside the app: “My account” → “Delete account”. Your sign-in account and access data are deleted. Records the academy must keep by law (e.g. payments) are retained for the required period, no longer linked to your account.', "For full erasure or anonymisation of the player's data, contact the office."]],
   ],
 }
 const TERMS: Record<'el' | 'en', Sec[]> = {
@@ -44,6 +50,8 @@ export default function Privacy() {
   const { lang, setLang, t } = useLang()
   const terms = window.location.hash.startsWith('#/terms')
   const secs = (terms ? TERMS : PRIVACY)[lang]
+  const [club, setClub] = useState<{ club_name?: string; phone?: string; email?: string; address?: string } | null>(null)
+  useEffect(() => { sb.rpc('public_club_info').then(({ data }) => setClub(data)) }, [])
   return <div className="public">
     <div className="public-head"><img src={BRAND + 'pss-logo.png'} alt="Patras Schools Soccer" />
       <div className="head" style={{ fontSize: 24, fontWeight: 800, textTransform: 'uppercase', marginTop: 6 }}>Patras Schools Soccer</div>
@@ -52,12 +60,14 @@ export default function Privacy() {
     <div className="public-body">
       <div className="card" style={{ lineHeight: 1.6 }}>
         {secs.map(([h, ps]) => <div key={h} style={{ marginBottom: 16 }}><h2 style={{ marginBottom: 6 }}>{h}</h2>{ps.length > 1 ? <ul style={{ margin: 0, paddingLeft: 20 }}>{ps.map((p) => <li key={p}>{p}</li>)}</ul> : <p style={{ margin: 0 }}>{ps[0]}</p>}</div>)}
-        <div className="muted" style={{ fontSize: 12.5 }}>{lang === 'el' ? 'Τελευταία ενημέρωση' : 'Last updated'}: 13/10/2026</div>
+        {club && (club.email || club.phone || club.address) && <div style={{ marginBottom: 16 }}><h2 style={{ marginBottom: 6 }}>{lang === 'el' ? 'Επικοινωνία' : 'Contact'}</h2>
+          <p style={{ margin: 0 }}>{club.club_name || 'Patras Schools Soccer'}{club.address ? ` · ${club.address}` : ''}{club.phone ? <> · <a href={`tel:${club.phone}`}>{club.phone}</a></> : null}{club.email ? <> · <a href={`mailto:${club.email}`}>{club.email}</a></> : null}</p></div>}
+        <div className="muted" style={{ fontSize: 12.5 }}>{lang === 'el' ? 'Τελευταία ενημέρωση' : 'Last updated'}: 19/10/2026</div>
       </div>
       <div className="row" style={{ justifyContent: 'center', gap: 16, marginTop: 16, fontSize: 14 }}>
-        <a href="#/register"><ArrowLeft size={14} /> {lang === 'el' ? 'Εγγραφή' : 'Registration'}</a>
+        <a href="#/" onClick={(e) => { if (window.history.length > 1) { e.preventDefault(); window.history.back() } }}><ArrowLeft size={14} /> {lang === 'el' ? 'Πίσω' : 'Back'}</a>
         <a href={terms ? '#/privacy' : '#/terms'}>{terms ? t('privacy') : t('terms')}</a>
-        <a href="#/">{lang === 'el' ? 'Είσοδος' : 'Sign in'}</a>
+        <a href="#/register">{lang === 'el' ? 'Εγγραφή αθλητή' : 'Registration'}</a>
       </div>
     </div>
   </div>

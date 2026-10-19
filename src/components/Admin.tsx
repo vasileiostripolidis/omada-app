@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { ShieldCheck, Download, CalendarRange, ArrowRight, KeyRound, History } from 'lucide-react'
 import { sb, dt, type Player } from '../lib/supabase'
 import { useApp, Modal } from '../ui'
+import { saveFile, WEB_APP } from '../lib/native'
 
 function saveJson(obj: unknown, name: string) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }))
-  const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 4000)
+  return saveFile(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }), name)
 }
 
 // ===== Αλλαγή σεζόν =====
@@ -149,5 +149,31 @@ export function AuditLog() {
     </tbody></table></div> : <div className="empty">Δεν υπάρχουν καταγραφές ακόμα</div>}
     {rows.length >= limit && <div className="item"><button className="btn ghost sm" onClick={() => setLimit(limit + 200)}>Περισσότερα</button></div>}
     <div className="item muted">Καταγράφεται αυτόματα κάθε δημιουργία, αλλαγή και διαγραφή σε αθλητές, οικογένειες, γονείς, χρεώσεις, πληρωμές, ρυθμίσεις, ρόλους χρηστών και συγκαταθέσεις. Δεν μπορεί να τροποποιηθεί από κανέναν.</div>
+  </div>
+}
+
+// ===== Λογαριασμοί επίδειξης για τον έλεγχο της Apple =====
+export function AppReviewDemo() {
+  const { toast } = useApp()
+  const [st, setSt] = useState<{ team?: string; players?: number; parents?: string[] | null; coaches?: string[] | null } | null>(null)
+  const [link, setLink] = useState('')
+  const [email, setEmail] = useState('')
+  const load = () => sb.rpc('demo_status').then(({ data }) => setSt(data))
+  useEffect(() => { load() }, [])
+  async function invite() { const { data, error } = await sb.rpc('demo_parent_invite'); if (error) return toast(error.message); if (!data) return toast('Ο γονέας demo έχει ήδη λογαριασμό'); setLink(`${WEB_APP}#/join/${data}`) }
+  async function coach() {
+    const { data, error } = await sb.rpc('make_demo_coach', { p_email: email }); if (error) return toast(error.message)
+    const m: Record<string, string> = { ok: 'Ο λογαριασμός έγινε προπονητής της ομάδας επίδειξης ✓', not_found: 'Δεν βρέθηκε χρήστης με αυτό το email — κάνε πρώτα εγγραφή από τη σελίδα σύνδεσης.', is_staff: 'Αυτό το email ανήκει σε διαχειριστή/γραμματεία — χρησιμοποίησε ξεχωριστό email.', is_parent: 'Αυτό το email ανήκει σε πραγματικό γονέα.', is_real_coach: 'Αυτό το email είναι πραγματικός προπονητής.' }
+    toast(m[data as string] || String(data)); if (data === 'ok') { setEmail(''); load() }
+  }
+  if (!st?.team) return null
+  return <div className="card">
+    <div className="row"><ShieldCheck size={22} color="var(--navy)" /><div className="grow"><b>Λογαριασμοί επίδειξης (έλεγχος Apple)</b><div className="muted">Η «{st.team}» με {st.players} αθλητές είναι εντελώς κρυφή από εσάς και τους γονείς. Οι λογαριασμοί demo βλέπουν μόνο αυτή.</div></div></div>
+    <div className="form" style={{ marginTop: 12 }}>
+      <div className="full"><b>Γονέας demo:</b> {st.parents?.length ? <span className="badge b-ok">{st.parents.join(', ')}</span> : <><span className="muted">δεν έχει λογαριασμό ακόμα · </span><button className="btn ghost sm" onClick={invite}>Σύνδεσμος πρόσκλησης</button></>}
+        {link && <div className="row" style={{ marginTop: 6 }}><code style={{ wordBreak: 'break-all', fontSize: 12 }} className="grow">{link}</code><button className="btn ghost sm" onClick={() => { navigator.clipboard.writeText(link); toast('Αντιγράφηκε ✓') }}>Αντιγραφή</button></div>}</div>
+      <div className="full"><b>Προπονητής demo:</b> {st.coaches?.length ? <span className="badge b-ok">{st.coaches.join(', ')}</span> : <span className="muted">δεν έχει οριστεί</span>}
+        <div className="row" style={{ marginTop: 6 }}><input className="grow" placeholder="email λογαριασμού που έκανε εγγραφή" value={email} onChange={(e) => setEmail(e.target.value)} /><button className="btn ghost sm" disabled={!email} onClick={coach}>Ορισμός ως προπονητής demo</button></div></div>
+    </div>
   </div>
 }

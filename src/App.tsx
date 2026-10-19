@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, HeartHandshake, Shield, Wallet, CalendarDays, Award, Settings as Cog, LogOut, Menu, Activity, ClipboardList, Package, BookOpen, IdCard, Megaphone, CloudOff, LifeBuoy, FileSpreadsheet } from 'lucide-react'
+import { LayoutDashboard, Users, HeartHandshake, Shield, Wallet, CalendarDays, Award, Settings as Cog, LogOut, Menu, Activity, ClipboardList, Package, BookOpen, IdCard, Megaphone, CloudOff, LifeBuoy, FileSpreadsheet, UserRound } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { sb, BRAND, ROLES, type Settings, type Team } from './lib/supabase'
 import { AppCtx, Modal } from './ui'
@@ -26,9 +26,13 @@ import News from './pages/News'
 import Privacy from './pages/Privacy'
 import Join, { claimPending } from './pages/Join'
 import Help from './pages/Help'
+import Account from './pages/Account'
+import SetPassword from './pages/SetPassword'
 import ImportData from './pages/ImportData'
 import MfaGate from './components/MfaGate'
+import OfflineBar from './components/OfflineBar'
 import { syncPending, pendingCount } from './lib/offline'
+import { initNativePush } from './lib/push'
 
 type NavItem = { sec?: string; to: string; icon: typeof Users; label: string; short: string; roles: string[]; badge?: number }
 const OFFICE = ['admin', 'secretary'], ALL = ['admin', 'secretary', 'coach']
@@ -49,23 +53,30 @@ const NAV: NavItem[] = [
   { to: '/import', icon: FileSpreadsheet, label: 'Εισαγωγή από Excel', short: 'Εισαγωγή', roles: OFFICE },
   { to: '/settings', icon: Cog, label: 'Ρυθμίσεις', short: 'Ρυθμίσεις', roles: OFFICE },
   { to: '/help', icon: LifeBuoy, label: 'Οδηγός χρήσης', short: 'Οδηγός', roles: ALL },
+  { to: '/account', icon: UserRound, label: 'Ο λογαριασμός μου', short: 'Λογαριασμός', roles: ALL },
 ]
 
 const isPublic = () => /^#\/(register|privacy|terms|join)/.test(window.location.hash)
 
 export default function App() {
+  return <><OfflineBar /><AppInner /></>
+}
+
+function AppInner() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [isReg, setIsReg] = useState(isPublic())
   useEffect(() => { const f = () => setIsReg(isPublic()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
+  const [recovery, setRecovery] = useState(() => window.location.hash.includes('type=recovery'))
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = sb.auth.onAuthStateChange((_e, s) => setSession(s))
+    const { data } = sb.auth.onAuthStateChange((e, s) => { setSession(s); if (e === 'PASSWORD_RECOVERY') setRecovery(true) })
     return () => data.subscription.unsubscribe()
   }, [])
   // Δημόσια φόρμα εγγραφής (χωρίς σύνδεση)
   if (isReg) return window.location.hash.startsWith('#/register') ? <Register /> : window.location.hash.startsWith('#/join') ? <Join /> : <Privacy />
   if (session === undefined) return null
   if (!session) return <Login />
+  if (recovery) return <SetPassword onDone={() => { setRecovery(false); window.location.hash = '#/' }} />
   return <MfaGate><Shell email={session.user.email || ''} uid={session.user.id} /></MfaGate>
 }
 
@@ -79,6 +90,7 @@ function Shell({ email, uid }: { email: string; uid: string }) {
   const reloadTeams = () => { sb.from('teams').select('*').order('name').then(({ data }) => setTeams(data || [])) }
   useEffect(() => {
     claimPending().catch(() => false).finally(() => sb.from('profiles').select('role').eq('id', uid).single().then(({ data }) => setRole(data?.role || 'pending')))
+    initNativePush().catch(() => {})
     sb.from('coach_teams').select('team_id').eq('profile_id', uid).then(({ data }) => setMyTeams((data || []).map((x) => x.team_id)))
     reloadSettings(); reloadTeams()
   }, [uid])
@@ -144,6 +156,7 @@ function Layout({ email, role }: { email: string; role: string }) {
           <Route path="/drills" element={<Drills />} />
           <Route path="/news" element={<News />} />
           <Route path="/help" element={<Help />} />
+          <Route path="/account" element={<Account />} />
           {OFFICE.includes(role) && <>
             <Route path="/families" element={<Families />} />
             <Route path="/families/:id" element={<FamilyDetail />} />

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { Copy, MessageSquare, Printer, CheckCircle2, Smartphone, RefreshCw } from 'lucide-react'
-import { sb, BRAND, type Guardian } from '../lib/supabase'
+import { sb, type Guardian } from '../lib/supabase'
 import { useApp, Modal } from '../ui'
+import { printHtml, WEB_APP } from '../lib/native'
 
-const APP = 'https://vasileiostripolidis.github.io/omada-app/'
+const APP = WEB_APP
 export const inviteUrl = (token: string) => `${APP}#/join/${token}`
 type G = Guardian & { profile_id?: string | null }
 
@@ -54,16 +55,15 @@ export function InviteModal({ guardian, onClose }: { guardian: G; onClose: () =>
 }
 
 function printSheet(items: { g: G; link: string; qr: string; kids?: string }[], club: string) {
-  const w = window.open('', '_blank'); if (!w) return
-  const card = (x: { g: G; link: string; qr: string; kids?: string }) => `<div class="c"><img class="logo" src="${BRAND}pss-logo-small.png"/><h2>${club}</h2><p>Πρόσκληση στην εφαρμογή γονέων</p>
+  const card = (x: { g: G; link: string; qr: string; kids?: string }) => `<div class="c"><img class="logo" src="${logo}"/><h2>${club}</h2><p>Πρόσκληση στην εφαρμογή γονέων</p>
     <h3>${x.g.first_name} ${x.g.last_name}</h3>${x.kids ? `<p class="k">${x.kids}</p>` : ''}<img class="qr" src="${x.qr}"/><p class="s">Σκανάρετε με την κάμερα του κινητού<br/>και φτιάξτε κωδικό πρόσβασης.</p></div>`
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Προσκλήσεις γονέων</title><style>
+  const logo = new URL('./brand/pss-logo-small.png', window.location.href).href
+  printHtml(`<!doctype html><html><head><meta charset="utf-8"><title>Προσκλήσεις γονέων</title><style>
     body{font-family:Inter,Arial,sans-serif;margin:0;color:#021534}.w{display:grid;grid-template-columns:1fr 1fr;gap:0}
     .c{border:1px dashed #bbb;padding:18px;text-align:center;page-break-inside:avoid;height:128mm;box-sizing:border-box}
     .logo{height:46px}h2{margin:6px 0 0;font-size:16px;text-transform:uppercase}h3{margin:10px 0 2px;font-size:19px}p{margin:2px 0;font-size:12px}.k{color:#c8102e;font-weight:700}
     .qr{width:58mm;height:58mm;margin:8px 0}.s{color:#555}@page{margin:8mm}</style></head><body><div class="w">${items.map(card).join('')}</div>
-    <script>window.onload=()=>setTimeout(()=>window.print(),400)</script></body></html>`)
-  w.document.close()
+    <script>window.onload=()=>setTimeout(()=>window.print(),400)</script></body></html>`, 'Proskliseis_goneon.pdf')
 }
 
 // Μαζικές προσκλήσεις: όλοι οι γονείς χωρίς λογαριασμό

@@ -8,6 +8,7 @@ import PlayerGoals from '../components/PlayerGoals'
 import PlayerHealth from '../components/PlayerHealth'
 import { useLang } from '../lib/i18n'
 import PushToggle from '../components/PushToggle'
+import Account from './Account'
 import type { Announcement } from '../lib/supabase'
 
 export default function ParentApp() {
@@ -40,9 +41,9 @@ export default function ParentApp() {
       <div className="public-body" style={{ maxWidth: 1000 }}>
         <div className="eyebrow">{lang === 'en' ? 'Parent portal' : 'Πύλη γονέων'}</div><h1 style={{ marginBottom: 4 }}>{t('p_hello')}</h1><div className="muted" style={{ marginBottom: 16 }}>{email}</div>
         <PushToggle compact lang={lang} toast={toast} />
-        {!kids.length ? <div className="card"><Empty title="Δεν βρέθηκαν αθλητές" text="Η γραμματεία πρέπει να συνδέσει το email σας με τον λογαριασμό της οικογένειας." /></div> : <>
+        {!kids.length ? <><div className="card"><Empty title="Δεν βρέθηκαν αθλητές" text="Η γραμματεία πρέπει να συνδέσει το email σας με τον λογαριασμό της οικογένειας." /></div><div style={{ marginTop: 14 }}><Account /></div></> : <>
           <div className="pills" style={{ marginBottom: 14 }}>{kids.map((x) => <button key={x.id} className={'pill' + (kid === x.id ? ' on' : '')} onClick={() => setKid(x.id)}>{x.first_name}</button>)}</div>
-          <div className="tabs">{[['overview', t('p_overview')], ['perf', t('p_perf')], ['goals', t('p_goals')], ['health', t('p_health')], ['news', t('p_news')], ['photos', t('p_photos')], ['money', `${t('p_finance')}${balance > 0.004 ? ` (${eur(balance)})` : ''}`]].map(([key, l]) =>
+          <div className="tabs">{[['overview', t('p_overview')], ['perf', t('p_perf')], ['goals', t('p_goals')], ['health', t('p_health')], ['news', t('p_news')], ['photos', t('p_photos')], ['money', `${t('p_finance')}${balance > 0.004 ? ` (${eur(balance)})` : ''}`], ['account', lang === 'en' ? 'My account' : 'Ο λογαριασμός μου']].map(([key, l]) =>
             <button key={key} className={'tab' + (tab === key ? ' on' : '')} onClick={() => setTab(key)}>{l}</button>)}</div>
           {k && tab === 'overview' && <KidOverview k={k} teamName={teams.find((t) => t.id === k.team_id)} />}
           {k && tab === 'perf' && <KidPerf k={k} />}
@@ -50,6 +51,7 @@ export default function ParentApp() {
           {k && tab === 'health' && <PlayerHealth playerId={k.id} readOnly />}
           {tab === 'news' && <ParentNews />}
           {tab === 'photos' && <ParentPhotos />}
+          {tab === 'account' && <Account />}
           {tab === 'money' && <div className="stack">
             <div className="card kpi"><div className="l">{t('p_balance')}</div><div className="v num" style={{ color: balance > 0.004 ? 'var(--red)' : 'var(--ok)' }}>{eur(Math.max(0, balance))}</div>
               {settings?.iban && balance > 0.004 && <div className="s">{lang === 'en' ? 'Pay by bank transfer to IBAN' : 'Πληρωμή με κατάθεση στο IBAN'} <b>{settings.iban}</b>{lang === 'en' ? ' or at the office.' : ' ή στη γραμματεία.'}</div>}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Pencil, Upload, FileText, Clock, CheckCircle2, Zap, ShieldAlert } from 'lucide-react'
 import { sb, eur, dt, daysTo, type Staff } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty } from '../ui'
+import { openUrl } from '../lib/native'
 
 type Hours = { id: string; staff_id: string; work_date: string; hours: number; description: string | null; event_id: string | null; amount: number | null; paid: boolean; paid_at: string | null }
 const DOCS: [keyof Staff, string][] = [['license_expiry', 'Δίπλωμα προπονητή'], ['criminal_record_expiry', 'Ποινικό μητρώο'], ['first_aid_expiry', 'Πρώτες βοήθειες'], ['medical_expiry', 'Ιατρική βεβαίωση']]
@@ -138,7 +139,7 @@ function StaffCard({ s, hours, onEdit, onClose }: { s: Staff; hours: Hours[]; on
     }
     toast('Ανέβηκαν ✓'); load()
   }
-  async function openDoc(p: string) { const { data } = await sb.storage.from('staff-files').createSignedUrl(p, 3600); if (data) window.open(data.signedUrl, '_blank') }
+  async function openDoc(p: string) { const { data } = await sb.storage.from('staff-files').createSignedUrl(p, 3600); if (data) openUrl(data.signedUrl) }
   return <Modal wide title={s.full_name} onClose={onClose} foot={<button className="btn" onClick={onEdit}><Pencil size={14} />Επεξεργασία</button>}>
     <div className="stack">
       <div className="muted">{[s.role_title, s.license, s.phone, s.email].filter(Boolean).join(' · ')}</div>

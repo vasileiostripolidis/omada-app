@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Printer, ChevronDown } from 'lucide-react'
 import { useApp, PageHead } from '../ui'
+import { printElement } from '../lib/native'
 
 type Topic = { q: string; a: (string | [string, string])[]; to?: string }
 // [κείμενο, σύνδεσμος] για βήματα με κουμπί μετάβασης
@@ -51,6 +52,7 @@ const COACH: { t: string; items: Topic[] }[] = [
 ]
 const PARENT: Topic[] = [
   { q: 'Πώς μπαίνει ο γονέας', a: ['Με τον σύνδεσμο ή το QR που του δίνει η γραμματεία: φτιάχνει κωδικό και βλέπει αμέσως τα παιδιά του.', 'Στο iPhone: Κοινοποίηση ⬆ → «Προσθήκη στην οθόνη Αφετηρίας», ώστε να ανοίγει σαν εφαρμογή και να παίρνει ειδοποιήσεις.'] },
+  { q: 'Λογαριασμός, κωδικός και διαγραφή', a: ['Κάθε χρήστης (γονέας, προπονητής, γραμματεία) έχει «Ο λογαριασμός μου»: αλλαγή κωδικού, ειδοποιήσεις, πολιτική απορρήτου, επικοινωνία με την ακαδημία και οριστική διαγραφή λογαριασμού.'] },
   { q: 'Τι βλέπει', a: ['Πρόγραμμα, παρουσίες, επιδόσεις και γραφήματα, στόχους, υγεία, ανακοινώσεις, φωτογραφίες (μόνο αν έχει δώσει συγκατάθεση), χρεώσεις, πληρωμές και αποδείξεις σε PDF. Δεν βλέπει κανένα άλλο παιδί.'] },
 ]
 
@@ -69,7 +71,7 @@ export default function Help() {
   const groups = isOffice ? [...OFFICE, { t: 'Για τους προπονητές', items: COACH.flatMap((g) => g.items) }, { t: 'Για τους γονείς', items: PARENT }] : [...COACH, { t: 'Για τους γονείς', items: PARENT }]
   return <div className="help">
     <PageHead eyebrow="Βοήθεια" title="Οδηγός χρήσης" sub={isOffice ? 'Γραμματεία & διοίκηση — πάτα μια ερώτηση για να δεις τα βήματα.' : 'Προπονητές — πάτα μια ερώτηση για να δεις τα βήματα.'}>
-      <button className="btn ghost" onClick={() => { document.body.classList.add('print-help'); window.print(); setTimeout(() => document.body.classList.remove('print-help'), 500) }}><Printer size={16} />Εκτύπωση / PDF</button>
+      <button className="btn ghost" onClick={async () => { document.body.classList.add('print-help'); try { await printElement(document.querySelector('.help') as HTMLElement, 'Odigos_xrisis.pdf') } finally { setTimeout(() => document.body.classList.remove('print-help'), 500) } }}><Printer size={16} />Εκτύπωση / PDF</button>
     </PageHead>
     <div className="stack">{groups.map((g) => <div key={g.t}><div className="section-t">{g.t}</div><Section items={g.items} /></div>)}</div>
   </div>

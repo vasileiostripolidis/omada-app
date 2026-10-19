@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Copy, CheckCircle2, XCircle, FileText, ExternalLink } from 'lucide-react'
 import { sb, dt, age, CONSENTS, type Registration } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty } from '../ui'
+import { openUrl } from '../lib/native'
 
 const LINK = 'https://vasileiostripolidis.github.io/omada-app/#/register'
 
@@ -20,7 +21,7 @@ export default function Registrations() {
       <div className="card row" style={{ marginBottom: 16 }}>
         <div className="grow"><b>Σύνδεσμος εγγραφής για γονείς</b><div className="muted" style={{ wordBreak: 'break-all' }}>{LINK}</div></div>
         <button className="btn ghost" onClick={() => { navigator.clipboard.writeText(LINK); toast('Ο σύνδεσμος αντιγράφηκε ✓') }}><Copy size={16} />Αντιγραφή</button>
-        <a className="btn ghost" href={LINK} target="_blank" rel="noreferrer"><ExternalLink size={16} />Προβολή</a>
+        <a className="btn ghost" href={LINK} onClick={(e) => { e.preventDefault(); openUrl(LINK) }}><ExternalLink size={16} />Προβολή</a>
       </div>
       <div className="tabs">{[['new', 'Νέες'], ['approved', 'Εγκεκριμένες'], ['rejected', 'Απορριφθείσες']].map(([k, l]) =>
         <button key={k} className={'tab' + (tab === k ? ' on' : '')} onClick={() => setTab(k)}>{l} ({rows.filter((r) => r.status === k).length})</button>)}</div>
@@ -44,7 +45,7 @@ function Review({ r, onClose, onDone }: { r: Registration; onClose: () => void; 
   const [team, setTeam] = useState(r.child.team || '')
   const [busy, setBusy] = useState(false)
   useEffect(() => { if (r.signature_path) sb.storage.from('registrations').createSignedUrl(r.signature_path, 3600).then(({ data }) => setSig(data?.signedUrl)) }, [r])
-  async function openFile(path: string) { const { data } = await sb.storage.from('registrations').createSignedUrl(path, 3600); if (data) window.open(data.signedUrl, '_blank') }
+  async function openFile(path: string) { const { data } = await sb.storage.from('registrations').createSignedUrl(path, 3600); if (data) openUrl(data.signedUrl) }
 
   async function approve() {
     setBusy(true)

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, ArrowUp, ArrowDown, Trash2, Printer, Search } from 'lucide-react'
 import { sb, EVTYPE, DRILL_CATS, type EventRow, type Drill } from '../lib/supabase'
 import { useApp, Modal } from '../ui'
+import { printElement } from '../lib/native'
 
 type Item = { id?: string; drill_id: string; minutes: number | null; notes: string | null; sort: number }
 // Πλάνο προπόνησης: στόχος + ασκήσεις από τη βιβλιοθήκη με σειρά & διάρκεια, εκτυπώσιμο
@@ -55,7 +56,7 @@ export default function SessionPlan({ ev, teamName, onClose }: { ev: EventRow; t
 
 function PrintView({ ev, teamName, objective, items, onBack }: { ev: EventRow; teamName: string; objective: string; items: (Item & { d?: Drill })[]; onBack: () => void }) {
   return <div className="print-sheet">
-    <div className="no-print row" style={{ marginBottom: 14 }}><button className="btn ghost" onClick={onBack}>← Πίσω</button><button className="btn red" onClick={() => window.print()}><Printer size={15} />Εκτύπωση</button></div>
+    <div className="no-print row" style={{ marginBottom: 14 }}><button className="btn ghost" onClick={onBack}>← Πίσω</button><button className="btn red" onClick={() => printElement(document.querySelector('.print-sheet') as HTMLElement, `Plano_${teamName}.pdf`)}><Printer size={15} />Εκτύπωση</button></div>
     <div className="row" style={{ borderBottom: '3px solid var(--red)', paddingBottom: 10 }}><img src="./brand/pss-logo-small.png" alt="" style={{ height: 60 }} />
       <div className="grow"><div className="eyebrow">Πλάνο προπόνησης</div><h1>{teamName}</h1><div className="muted">{EVTYPE[ev.type]} · {new Date(ev.starts_at).toLocaleString('el-GR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}{ev.location ? ` · ${ev.location}` : ''}</div></div>
       <div className="head" style={{ fontSize: 28, fontWeight: 800 }}>{items.reduce((a, x) => a + (x.minutes || 0), 0)}'</div></div>

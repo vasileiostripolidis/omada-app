@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 export const SUPABASE_URL = 'https://hcdrskfzznsrwedcstsx.supabase.co'
 export const SUPABASE_KEY = 'sb_publishable_vqTscZ3b7pfNHlDd82RWfQ_0goRDkTx'
 export const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
-export const BRAND = 'https://vasileiostripolidis.github.io/omada-app/brand/'
+export const BRAND = './brand/'
 
 export type Team = { id: string; name: string; short_name: string | null; age_group: string | null; season: string | null; coach_name: string | null; color: string | null; training_schedule: string | null; monthly_fee: number | null; logo_url: string | null; fee_1: number | null; fee_2: number | null; fee_3: number | null; fee_extra: number | null; next_team_id?: string | null; birth_year_from?: number | null; birth_year_to?: number | null }
 export type Player = {

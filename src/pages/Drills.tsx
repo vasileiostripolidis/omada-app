@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Search, Clock, Users, PlayCircle, Pencil, Trash2, Upload } from 'lucide-react'
 import { sb, DRILL_CATS, uploadPublic, type Drill } from '../lib/supabase'
 import { useApp, Modal, PageHead, Empty } from '../ui'
+import { openUrl } from '../lib/native'
 
 // Βιβλιοθήκη ασκήσεων του συλλόγου
 export default function Drills() {
@@ -32,7 +33,7 @@ export default function Drills() {
         {open.description && <div><b>Περιγραφή</b><p style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{open.description}</p></div>}
         {open.coaching_points && <div><b>Σημεία καθοδήγησης</b><p style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{open.coaching_points}</p></div>}
         {open.equipment && <div className="muted">Υλικά: {open.equipment}</div>}
-        {open.media_url && <a className="btn ghost" href={open.media_url} target="_blank" rel="noreferrer"><PlayCircle size={16} />Βίντεο άσκησης</a>}
+        {open.media_url && <a className="btn ghost" href={open.media_url} onClick={(e) => { e.preventDefault(); openUrl(open.media_url!) }}><PlayCircle size={16} />Βίντεο άσκησης</a>}
       </div></Modal>}
     {edit && <DrillForm d={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load() }} />}
   </>

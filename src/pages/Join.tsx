@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { sb, BRAND } from '../lib/supabase'
 import { useLang } from '../lib/i18n'
+import { WEB_APP } from '../lib/native'
 
 export const INVITE_KEY = 'pss_invite'
 export const pendingInvite = () => { try { return localStorage.getItem(INVITE_KEY) } catch { return null } }
@@ -34,7 +35,7 @@ export default function Join() {
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setMsg(null)
     const r = mode === 'up'
-      ? await sb.auth.signUp({ email, password: pw, options: { data: { full_name: name }, emailRedirectTo: window.location.origin + window.location.pathname } })
+      ? await sb.auth.signUp({ email, password: pw, options: { data: { full_name: name }, emailRedirectTo: WEB_APP } })
       : await sb.auth.signInWithPassword({ email, password: pw })
     setBusy(false)
     if (r.error) return setMsg({ t: r.error.message.includes('already') ? (en ? 'This email already has an account – choose “I have an account”.' : 'Αυτό το email έχει ήδη λογαριασμό – επίλεξε «Έχω λογαριασμό».') : r.error.message })

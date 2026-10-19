@@ -8,6 +8,7 @@ import PlayerHealth from '../components/PlayerHealth'
 import { useApp, Modal, TeamChip, Empty } from '../ui'
 import { PlayerForm } from './Players'
 import { exportPlayerData } from '../components/Admin'
+import { openUrl } from '../lib/native'
 
 type FileRow = { id: string; name: string; path: string; mime: string | null; size: number | null; kind: string; doc_type: string | null; uploaded_at: string }
 type LinkRow = { household_id: string; share_pct: number; households: Household }
@@ -107,7 +108,7 @@ export default function PlayerDetail() {
     }
     setBusy(false); toast(asPhoto ? 'Η φωτογραφία ενημερώθηκε ✓' : 'Τα έγγραφα ανέβηκαν ✓'); e.target.value = ''; load()
   }
-  async function openFile(f: FileRow) { const u = await signedUrl(f.path); if (u) window.open(u, '_blank') }
+  async function openFile(f: FileRow) { const u = await signedUrl(f.path); if (u) openUrl(u) }
   async function delFile(f: FileRow) {
     if (!confirm(`Διαγραφή «${f.name}»;`)) return
     await sb.storage.from('player-files').remove([f.path]); await sb.from('player_files').delete().eq('id', f.id); load()

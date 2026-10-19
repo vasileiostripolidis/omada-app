@@ -1,4 +1,5 @@
 import { sb } from './supabase'
+import { saveBase64 } from './native'
 
 type Res = { pdf?: string; emailed?: boolean; error?: string; sent?: number; skipped?: number; total?: number; errors?: string[] }
 
@@ -12,13 +13,7 @@ async function call(body: Record<string, unknown>): Promise<Res> {
   return data as Res
 }
 
-export function downloadPdf(b64: string, filename: string) {
-  const bin = atob(b64); const u = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i)
-  const url = URL.createObjectURL(new Blob([u], { type: 'application/pdf' }))
-  const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 4000)
-}
+export function downloadPdf(b64: string, filename: string) { return saveBase64(b64, filename) }
 
 export const statement = (household_id: string, send: boolean, reminder = false) => call({ action: 'statement', household_id, send, reminder })
 export const receipt = (payment_id: string, send: boolean) => call({ action: 'receipt', payment_id, send })
